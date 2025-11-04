@@ -9,18 +9,22 @@ Path = List[Coord]
 # No-fly zones (obstacles)
 # -----------------------
 def make_no_fly_zones(rows: int, cols: int, count: int = 2, seed: Optional[int] = None,
-                      max_w: int = 3, max_h: int = 3) -> Set[Coord]:
+                      max_w: int = 1, max_h: int = 1) -> Set[Coord]:
     if seed is not None:
         random.seed(seed + 1001)
     blocked: Set[Coord] = set()
     attempts = 0
     while count > 0 and attempts < 200:
+        #setting the no fly box width and height
         attempts += 1
-        w = random.randint(1, max_w)
-        h = random.randint(1, max_h)
+        w = 1
+        h = 1
+        #setting the no cly box location 
         r0 = random.randint(0, rows - h)
         c0 = random.randint(0, cols - w)
+        # setting where the values of the grid are blocked and saving it for the creation of the marix
         rect = {(r, c) for r in range(r0, r0 + h) for c in range(c0, c0 + w)}
+        #setting rect to a subset of blocked and setting it in binary to save opperating space
         if not rect.issubset(blocked):
             blocked |= rect
             count -= 1
@@ -30,42 +34,58 @@ def make_no_fly_zones(rows: int, cols: int, count: int = 2, seed: Optional[int] 
 # Grid & utilities
 # -----------------------
 def random_warehouse(rows: int, cols: int, blocked: Set[Coord], seed: Optional[int] = None) -> Coord:
+    # if there is a seed then useing that rather than random values
     if seed is not None:
         random.seed(seed + 2002)
+    
+    # making a list of avable options
     candidates = [(r, c) for r in range(rows) for c in range(cols) if (r, c) not in blocked]
+    #if there is no space then print an error
     if not candidates:
         raise ValueError("No space for warehouse (everything blocked).")
+    #selecting the location of w from the options
     return random.choice(candidates)
+
 
 def sample_delivery_points(rows: int, cols: int, k: int, avoid: Coord, blocked: Set[Coord],
                            seed: Optional[int] = None) -> List[Coord]:
+    #setting a seed 
     if seed is not None:
         random.seed(seed + 3003)
+    # setting the 
     cells = [(r, c) for r in range(rows) for c in range(cols)
              if (r, c) != avoid and (r, c) not in blocked]
+    #randomising cells
     random.shuffle(cells)
+    #returns the number of deleveris of the cells
     return cells[:k]
 
 def assign_demands(deliveries: List[Coord], low: int = 1, high: int = 3, seed: Optional[int] = None) -> Dict[Coord, int]:
     if seed is not None:
         random.seed(seed + 4004)
+    #setting the amount of weight that each delivary has 
     return {d: random.randint(low, high) for d in deliveries}
 
 # -----------------------
 # BFS shortest path (steps) with obstacles
 # -----------------------
 def bfs_shortest_path(rows: int, cols: int, start: Coord, end: Coord, blocked: Set[Coord]) -> Tuple[int, Path]:
+    # making sure that you can and need to move
     if start == end:
         return 0, [start]
     if start in blocked or end in blocked:
         return float("inf"), []
+    
     sr, sc = start
     er, ec = end
     q = deque([(sr, sc)])
     parent: Dict[Coord, Coord] = {}
     seen = [[False]*cols for _ in range(rows)]
     seen[sr][sc] = True
-    dirs = [(1,0), (-1,0), (0,1), (0,-1)]
+    # setting the avalable move actions
+    dirs = [(1,0), (-1,0), (0,1), (0,-1), #horezontals
+            (1, 1), (1, -1), (-1, 1), (-1, -1)]  # diagonals
+    
     while q:
         r, c = q.popleft()
         for dr, dc in dirs:
@@ -129,6 +149,7 @@ def run_all_trips(
     # Filter unreachable deliveries beforehand
     remaining = []
     impossible = []
+    # 
     for d in deliveries:
         if demands[d] > carry_capacity:
             impossible.append(d)
@@ -300,7 +321,7 @@ if __name__ == "__main__":
     rows, cols = 10, 10
     num_deliveries = 7
     carry_capacity = 10
-    battery_capacity = 100.0
+    battery_capacity = 75.0
     seed = None  # change/None for different random worlds
 
     blocked = make_no_fly_zones(rows, cols, count=2, seed=seed, max_w=3, max_h=3)
@@ -322,3 +343,4 @@ if __name__ == "__main__":
         carry_capacity=carry_capacity,
         battery_capacity=battery_capacity
     )
+    
