@@ -1,6 +1,4 @@
 
-
-
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -11,7 +9,7 @@ from scipy.integrate import solve_ivp
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
 C_d = 1                 # Drag coefficient
-A_top = 0.25            # Effective top area of drone (m^2)
+A_top = 0.25             # Effective top area of drone (m^2)
 A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
 eta = 0.75              # overall efficiency (motor * prop)
 Vb = 22.2               # battery voltage (V)
@@ -33,24 +31,20 @@ alt_target = 30.0       # m target altitude (stop integration here)
 # ODEs for takeoff phase
 # state vector y = [z, vz, E]
 # ----------------------------
-
 def takeoff_dynamics(t, y):
     z, vz, E = y
 
     # --- Control law / thrust command ---
     # Simple proportional controller on vertical speed:
-    k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
-                            
+    k_p = 6.0                                        # if vz not euquak to v target increase acceleration by 5
+    
     Thurst = m_tot * (g + k_p * (v_target - vz))  # Thurst (N)
-    Drag_z = 0.5*rho*C_d*A_top*vz* abs(vz)        # vertical drag (N)
-   
+    Drag_z = 0.5*rho*C_d*A_top*(vz**2)            # vertical drag (N)
     # --- Power model ---
-   
     # Induced velocity (momentum theory)
     vi = np.sqrt(Thurst / (2 * rho * A_disk))
-  
-    P_ind = Thurst * vi                      # induced power (W)
-    P_elec = (P_ind / eta) + P_av            # electrical power 
+    P_ind = Thurst * vi                     # induced power (W)
+    P_elec = (P_ind / eta) + P_av           # electrical power 
 
     # --- Dynamics ---
     dzdt = vz
@@ -62,9 +56,8 @@ def takeoff_dynamics(t, y):
 # ----------------------------
 # Integration setup
 # ----------------------------
-
 y0 = [0.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
-t_span = (0, 30)                              # simulate up to 30 s (should reach ~10 m)
+t_span = (0, 30)                              # simulate up to 15 s (should reach ~10 m)
 t_eval = np.linspace(t_span[0], t_span[1], 300)
 
 sol = solve_ivp(takeoff_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
@@ -89,7 +82,6 @@ P_loss = P_loss[:idx]
 # ----------------------------
 # Plot results
 # ----------------------------
-
 plt.figure(figsize=(10,6))
 
 plt.subplot(3,1,1)
