@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ---------------------------------------
-# 1️⃣ Physics-based power model
+# Physics-based power model
 # ---------------------------------------
 def power_model(W, v, params):
     """
@@ -26,7 +26,7 @@ def power_model(W, v, params):
 
 
 # ---------------------------------------
-# 2️⃣ Main simulation: energy vs distance
+# Main simulation: energy vs distance
 # ---------------------------------------
 def simulate_energy_along_path(payload_drops, E0, speed, params):
     """
@@ -65,7 +65,7 @@ def simulate_energy_along_path(payload_drops, E0, speed, params):
 
 
 # ---------------------------------------
-# 3️⃣ Parameter setup (values chosen for clarity)
+# Parameter setup (values chosen for clarity)
 # ---------------------------------------
 params = {
     "g": 9.81,
@@ -86,13 +86,13 @@ speed = 8.0
 
 
 # ---------------------------------------
-# 4️⃣ Run simulation
+# Run simulation
 # ---------------------------------------
 s_trace, E_trace, W_trace, P_trace = simulate_energy_along_path(payload_drops, E0, speed, params)
 
 
 # ---------------------------------------
-# 5️⃣ Plot: Battery energy vs distance
+# Plot: Battery energy vs distance
 # ---------------------------------------
 plt.figure(figsize=(8,5))
 plt.plot(s_trace, E_trace/3600, color='royalblue', label='Remaining energy')
@@ -106,7 +106,7 @@ plt.show()
 
 
 # ---------------------------------------
-# 6️⃣ Plot: Instantaneous power vs distance
+# Plot: Instantaneous power vs distance
 # ---------------------------------------
 plt.figure(figsize=(8,5))
 plt.plot(s_trace[:len(P_trace)], P_trace, color='orange', label='Instantaneous power (W)')
@@ -120,7 +120,7 @@ plt.show()
 
 
 # ---------------------------------------
-# 7️⃣ Plot: Payload mass vs distance
+# Plot: Payload mass vs distance
 # ---------------------------------------
 plt.figure(figsize=(8,5))
 plt.plot(s_trace, W_trace, color='green', label='Payload on board (kg)')
@@ -134,7 +134,7 @@ plt.show()
 
 
 # ---------------------------------------
-# 8️⃣ Print results summary
+# Print results summary
 # ---------------------------------------
 print("Initial payload: {:.1f} kg".format(sum(payload_drops)))
 print("Final payload: {:.1f} kg".format(W_trace[-1]))
