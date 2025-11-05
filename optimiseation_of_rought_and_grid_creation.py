@@ -1,6 +1,7 @@
 import random
 from collections import deque
 from typing import Tuple, List, Dict, Optional, Set
+import math
 
 Coord = Tuple[int, int]
 Path = List[Coord]
@@ -20,7 +21,7 @@ def make_no_fly_zones(rows: int, cols: int, count: int = 2, seed: Optional[int] 
         w = 1
         h = 1
         #setting the no cly box location 
-        r0 = random.randint(0, rows - h)
+        r0 = random.randint(0, rows - h) 
         c0 = random.randint(0, cols - w)
         # setting where the values of the grid are blocked and saving it for the creation of the marix
         rect = {(r, c) for r in range(r0, r0 + h) for c in range(c0, c0 + w)}
