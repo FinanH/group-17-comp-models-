@@ -16,6 +16,259 @@ import heapq
 from typing import Tuple, List, Dict, Optional, Set
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+
+# ----------------------------
+# Drone + environment parameters
+# ----------------------------
+g = 9.81                # gravity (m/s^2)
+rho = 1.225             # air density (kg/m^3)
+C_d = 0.9                 # Drag coefficient
+A_top = 0.175674            # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
+eta = 0.88              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 4.5                # battery capacity (Ah)
+P_av = 12                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 5.93           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 9.5         # x6 battery masses (kg)
+C_d = 1                 # Drag coefficient
+A_top = 0.25            # Effective top area of drone (m^2)
+A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 5.0                # battery capacity (Ah)
+P_av = 5                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 1.5           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 0.5         # battery mass (kg)
+m_tot = m_frame + m_payload + m_battery  # total mass (kg)
+
+# Desired takeoff climb speed target
+v_target = 2.0          # m/s (steady climb)
+alt_target = 30.0       # m target altitude (stop integration here)
+
+# ----------------------------
+# Drone + environment parameters
+# ----------------------------
+g = 9.81                # gravity (m/s^2)
+rho = 1.225             # air density (kg/m^3)
+C_d = 1                 # Drag coefficient
+A_top = 0.175674            # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 4.5                # battery capacity (Ah)
+P_av = 12                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 5.93           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 9.5         # x6 battery mass (kg)
+A_top = 0.25            # Effective top area of drone (m^2)
+A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 5.0                # battery capacity (Ah)
+P_av = 5                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 1.5           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 0.5         # battery mass (kg)
+m_tot = m_frame + m_payload + m_battery  # total mass (kg)
+
+# Desired takeoff climb speed target
+v_target = 2.0          # m/s (steady climb)
+alt_target = 30.0       # m target altitude (stop integration here)
+
+# ----------------------------
+# ODEs for takeoff phase
+# state vector y = [z, vz, E]
+# ----------------------------
+
+def takeoff_dynamics(t, y):
+    z, vz, E = y
+
+    # --- Control law / thrust command ---
+    # Simple proportional controller on vertical speed:
+    k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
+                            
+    Thurst = m_tot * (g + k_p * (v_target - vz))  # Thurst (N)
+    Drag_z = 0.5*rho*C_d*A_top*vz* abs(vz)        # vertical drag (N)
+   
+    # --- Power model ---
+   
+    # Induced velocity (momentum theory)
+    vi = np.sqrt(Thurst / (2 * rho * A_disk))
+  
+    P_ind = Thurst * vi                      # induced power (W)
+    P_elec = (P_ind / eta) + P_av            # electrical power 
+
+    # --- Dynamics ---
+    dzdt = vz
+    dvzdt = (Thurst - (m_tot * g) - Drag_z )/ m_tot
+    dEdt = -P_elec
+
+    return [dzdt, dvzdt, dEdt]
+
+# ----------------------------
+# Integration setup
+# ----------------------------
+def plotting_take_off():
+    y0 = [0.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
+    t_span = (0, 30)                              # simulate up to 30 s (should reach ~10 m)
+    t_eval = np.linspace(t_span[0], t_span[1], 300)
+    
+    sol = solve_ivp(takeoff_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
+    
+    # ----------------------------
+    # Extract results
+    # ----------------------------
+    z = sol.y[0]
+    vz = sol.y[1]
+    E = sol.y[2]
+    t = sol.t
+    P_loss = (E_avail - E) / 3600  # convert J to Wh
+    
+    # Stop when target altitude reached
+    idx = np.where(z >= alt_target)[0][0]
+    z = z[:idx]
+    vz = vz[:idx]
+    E = E[:idx]
+    t = t[:idx]
+    P_loss = P_loss[:idx]
+    
+    # ----------------------------
+    # Plot results
+    # ----------------------------
+    
+    plt.figure(figsize=(10,6))
+    
+    plt.subplot(3,1,1)
+    plt.plot(t, z, label='Altitude z(t)')
+    plt.ylabel('Altitude (m)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,2)
+    plt.plot(t, vz, label='Vertical Speed')
+    plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+    plt.ylabel('v_z (m/s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,3)
+    plt.plot(t, P_loss, label='Energy used')
+    plt.ylabel('Energy used (Wh)')
+    plt.xlabel('Time (s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    print(f"Reached altitude: {z[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
+
+
+# ----------------------------
+# ODEs for takeoff phase
+# state vector y = [z, vz, E]
+# ----------------------------
+def landing_dynamics(t, y):
+    z, vz, E = y
+
+    # --- Control law / thrust command ---
+    # Simple proportional controller on vertical speed:
+    k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
+                            
+    Thurst = m_tot * (g + k_p * (v_target - vz))  # Thurst (N)
+    Drag_z = 0.5*rho*C_d*A_top*vz* abs(vz)        # vertical drag (N)
+   
+    # --- Power model ---
+   
+    # Induced velocity (momentum theory)
+    vi = np.sqrt(Thurst / (2 * rho * A_disk))
+  
+    P_ind = Thurst * vi                      # induced power (W)
+    P_elec = (P_ind / eta) + P_av            # electrical power 
+
+    # --- Dynamics ---
+    dzdt = vz
+    dvzdt = (Thurst - (m_tot * g) - Drag_z )/ m_tot
+    dEdt = -P_elec
+
+    return [dzdt, dvzdt, dEdt]
+
+# ----------------------------
+# Integration setup
+# ----------------------------
+def plotting_landing():
+    y0 = [0.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
+    t_span = (0, 30)                              # simulate up to 30 s (should reach ~10 m)
+    t_eval = np.linspace(t_span[0], t_span[1], 300)
+    
+    sol = solve_ivp(landing_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
+    
+    # ----------------------------
+    # Extract results
+    # ----------------------------
+    z = sol.y[0]
+    vz = sol.y[1]
+    E = sol.y[2]
+    t = sol.t
+    P_loss = (E_avail - E) / 3600  # convert J to Wh
+    
+    # Stop when target altitude reached
+    idx = np.where(z >= alt_target)[0][0]
+    z = z[:idx]
+    vz = vz[:idx]
+    E = E[:idx]
+    t = t[:idx]
+    P_loss = P_loss[:idx]
+    
+    # ----------------------------
+    # Plot results
+    # ----------------------------
+    
+    plt.figure(figsize=(10,6))
+    
+    plt.subplot(3,1,1)
+    plt.plot(t, z, label='Altitude z(t)')
+    plt.ylabel('Altitude (m)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,2)
+    plt.plot(t, vz, label='Vertical Speed')
+    plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+    plt.ylabel('v_z (m/s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,3)
+    plt.plot(t, P_loss, label='Energy used')
+    plt.ylabel('Energy used (Wh)')
+    plt.xlabel('Time (s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    print(f"Reached altitude: {z[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
 
 Coord = Tuple[int, int]
 Path = List[Coord]
@@ -159,6 +412,7 @@ def polt_energy():
     print("Final payload: {:.1f} kg".format(W_trace[-1]))
     print("Total energy used: {:.2f} Wh".format((E0 - E_trace[-1]) / 3600))
     print("Power range: {:.1f} W → {:.1f} W".format(max(P_trace), min(P_trace)))
+
 # -----------------------
 # No-fly zones (obstacles)
 # -----------------------
@@ -283,152 +537,150 @@ def move_energy_kwh(distance_km: float, load_kg: float, speed_kmh: float) -> flo
     return power_kw(load_kg) * (distance_km / speed_kmh)
 
 # -----------------------
-# Trip optimizer (enumerate feasible routes within one trip)
+# Trip-by-trip planner
 # -----------------------
-def enumerate_feasible_routes(
-    warehouse: Coord,
-    candidates: List[Coord],
-    demands: Dict[Coord, int],
-    dist_km: Dict[Tuple[Coord, Coord], float],
-    battery_capacity_kwh: float,
-    carry_capacity: int,
-    cruise_speed_kmh: float
-):
-    """
-    Enumerate all feasible sequences starting at warehouse and returning to warehouse
-    such that cumulative energy (including return leg) never exceeds battery_capacity_kwh
-    and total delivered weight in the trip does not exceed carry_capacity.
-    Returns a list of dicts with keys: 'order', 'energy_kwh'.
-    """
-    results = []
-
-    from itertools import permutations, combinations
-
-    feasible_points = [p for p in candidates if demands[p] <= carry_capacity]
-
-    # Generate subsets of feasible_points respecting capacity
-    for r in range(1, len(feasible_points) + 1):
-        for subset in combinations(feasible_points, r):
-            total_weight = sum(demands[p] for p in subset)
-            if total_weight > carry_capacity:
-                continue
-            # Try all orders
-            for order in permutations(subset):
-                energy_used = 0.0
-                current = warehouse
-                carried = total_weight
-                ok = True
-
-                # Move through each stop
-                for stop in order:
-                    d = dist_km.get((current, stop), float("inf"))
-                    leg_e = move_energy_kwh(d, carried, cruise_speed_kmh)
-                    energy_used += leg_e
-                    if energy_used > battery_capacity_kwh:
-                        ok = False
-                        break
-                    carried -= demands[stop]
-                    current = stop
-
-                if not ok:
-                    continue
-
-                # Return to warehouse
-                d_back = dist_km.get((current, warehouse), float("inf"))
-                return_e = move_energy_kwh(d_back, max(carried, 0.0), cruise_speed_kmh)
-                energy_used += return_e
-                if energy_used <= battery_capacity_kwh and math.isfinite(energy_used):
-                    results.append({
-                        "order": list(order),
-                        "energy_kwh": energy_used
-                    })
-
-    # If nothing feasible, we still consider the empty route (do nothing this trip)
-    if not results:
-        results.append({"order": [], "energy_kwh": float("inf")})
-
-    # Sort by energy
-    results.sort(key=lambda x: x["energy_kwh"])
-    return results
-
-def plot_routes_energy(routes, trip_number: int):
-    energies = [r["energy_kwh"] for r in routes]
-    xs = list(range(1, len(routes) + 1))
-
-    plt.figure()
-    plt.scatter(xs, energies, marker='o')
-    if energies and math.isfinite(energies[0]):
-        # routes are sorted ascending; index 1 is the minimum
-        plt.scatter([1], [energies[0]], marker='x', s=100)
-        plt.annotate("min", (1, energies[0]))
-    plt.xlabel("Candidate route index (sorted by energy)")
-    plt.ylabel("Total energy (kWh)")
-    plt.title(f"Trip {trip_number}: candidate routes vs energy")
-    plt.show()
-
-# -----------------------
-# Planner that uses per-trip optimizer + plotting
-# -----------------------
-def run_optimized_trips_with_plots(
+def run_all_trips(
     rows: int,
     cols: int,
     warehouse: Coord,
     deliveries: List[Coord],
-    demands: Dict[Coord, int],
+    demands: Dict[Coord, int],   # kg per delivery
     blocked: Set[Coord],
-    carry_capacity: int = 10,
+    carry_capacity: int = 10,    # kg
     battery_capacity_kwh: float = 5.0,
-    cruise_speed_kmh: float = 40.0,
-    max_trips: int = 100
+    cruise_speed_kmh: float = 40.0
 ):
     points = [warehouse] + deliveries
     dist_km, path = precompute_pairs(rows, cols, points, blocked)
 
-    remaining = deliveries[:]
+    remaining = []
+    impossible = []
+    for d in deliveries:
+        if demands[d] > carry_capacity:
+            impossible.append(d)
+        elif dist_km[(warehouse, d)] == float("inf") or dist_km[(d, warehouse)] == float("inf"):
+            impossible.append(d)
+        else:
+            remaining.append(d)
+
     trip_idx = 0
     grand_total_energy = 0.0
-
-    while remaining and trip_idx < max_trips:
+    while remaining:
         trip_idx += 1
+        energy = battery_capacity_kwh
+        carried = min(carry_capacity, sum(demands[d] for d in remaining))
+        current = warehouse
+        trip_path: Path = [warehouse]
+        trip_legs = []
+        served_this_trip = []
 
-        # Enumerate all feasible routes this trip
-        routes = enumerate_feasible_routes(
-            warehouse=warehouse,
-            candidates=remaining,
-            demands=demands,
-            dist_km=dist_km,
-            battery_capacity_kwh=battery_capacity_kwh,
-            carry_capacity=carry_capacity,
-            cruise_speed_kmh=cruise_speed_kmh
-        )
+        while True:
+            candidates = []
+            for d in remaining:
+                dmd = demands[d]
+                if dmd > carried:
+                    continue
+                dist_to_km = dist_km[(current, d)]
+                if dist_to_km == float("inf"):
+                    continue
+                go_e = move_energy_kwh(dist_to_km, carried, cruise_speed_kmh)
+                new_load = carried - dmd
+                dist_back_km = dist_km[(d, warehouse)]
+                if dist_back_km == float("inf"):
+                    continue
+                back_e = move_energy_kwh(dist_back_km, max(new_load, 0.0), cruise_speed_kmh)
+                need = go_e + back_e
+                if need <= energy:
+                    candidates.append((dist_to_km, d, go_e, back_e, new_load))
+            if not candidates:
+                if current != warehouse:
+                    dist_home_km = dist_km[(current, warehouse)]
+                    back_e = move_energy_kwh(dist_home_km, max(carried, 0.0), cruise_speed_kmh)
+                    if back_e > energy:
+                        break
+                    p = path[(current, warehouse)]
+                    trip_path += (p[1:] if p and p[0] == current else p)
+                    trip_legs.append({
+                        'type': 'move', 'from': current, 'to': warehouse,
+                        'distance_km': dist_home_km, 'load_before_kg': max(carried, 0.0), 'energy_kwh': back_e
+                    })
+                    energy -= back_e
+                    grand_total_energy += back_e
+                    current = warehouse
+                break
 
-        # Plot candidates and highlight min
-        plot_routes_energy(routes, trip_idx)
+            candidates.sort(key=lambda x: x[0])
+            dist_to_km, target, go_e, back_e, new_load = candidates[0]
+            p = path[(current, target)]
+            trip_path += (p[1:] if p and p[0] == current else p)
+            trip_legs.append({
+                'type': 'move', 'from': current, 'to': target,
+                'distance_km': dist_to_km, 'load_before_kg': carried, 'energy_kwh': go_e
+            })
+            energy -= go_e
+            grand_total_energy += go_e
+            current = target
 
-        # Pick the minimum-energy route
-        best = routes[0]
-        if not math.isfinite(best["energy_kwh"]) or not best["order"]:
-            print("\nNo feasible route for remaining deliveries within battery/capacity constraints:")
-            print(remaining)
-            break
+            dmd = demands[target]
+            carried -= dmd
+            served_this_trip.append((target, dmd))
+            trip_legs.append({'type': 'drop', 'at': target, 'demand': dmd, 'load_after': carried})
+            remaining.remove(target)
 
-        selected = best["order"]
-        print(f"\n=== Trip {trip_idx} (optimal among {len(routes)} candidates) ===")
-        print("Will visit, in order:", selected)
-        print(f"Trip energy (kWh): {best['energy_kwh']:.3f}")
+            if carried == 0 and current != warehouse:
+                dist_home_km = dist_km[(current, warehouse)]
+                back_e2 = move_energy_kwh(dist_home_km, 0.0, cruise_speed_kmh)
+                if back_e2 > energy:
+                    break
+                p = path[(current, warehouse)]
+                trip_path += (p[1:] if p and p[0] == current else p)
+                trip_legs.append({
+                    'type': 'move', 'from': current, 'to': warehouse,
+                    'distance_km': dist_home_km, 'load_before_kg': 0.0, 'energy_kwh': back_e2
+                })
+                energy -= back_e2
+                grand_total_energy += back_e2
+                current = warehouse
+                break
 
-        # Execute: remove delivered points, accumulate energy
-        grand_total_energy += best["energy_kwh"]
-        for p in selected:
-            if p in remaining:
-                remaining.remove(p)
+        print(f"\n=== Trip {trip_idx} ===")
+        if served_this_trip:
+            print("Delivered:", ", ".join(f"{pt} (x{dmd} kg)" for pt, dmd in served_this_trip))
+        else:
+            print("No deliveries completed on this trip.")
+        print("Legs:")
+        for i, leg in enumerate(trip_legs, 1):
+            if leg['type'] == 'move':
+                print(f"  {i:02d}. MOVE {leg['from']} -> {leg['to']}  "
+                      f"dist_km={leg['distance_km']:.3f}  load_before_kg={leg['load_before_kg']}  "
+                      f"energy_kwh={leg['energy_kwh']:.3f}")
+            else:
+                print(f"  {i:02d}. DROP at {leg['at']}  demand_kg={leg['demand']}  load_after_kg={leg['load_after']}")
+        print(f"Trip {trip_idx} ended at: {current}")
+        print("Remaining deliveries:", remaining if remaining else "None")
+
+        if remaining:
+            can_start = False
+            start_load = min(carry_capacity, sum(demands[x] for x in remaining))
+            for d in remaining:
+                dmd = demands[d]
+                if dmd > carry_capacity:
+                    continue
+                dist_to_km = dist_km[(warehouse, d)]
+                dist_back_km = dist_km[(d, warehouse)]
+                if dist_to_km == float("inf") or dist_back_km == float("inf"):
+                    continue
+                go_e = move_energy_kwh(dist_to_km, start_load, cruise_speed_kmh)
+                back_e = move_energy_kwh(dist_back_km, max(start_load - dmd, 0.0), cruise_speed_kmh)
+                if go_e + back_e <= battery_capacity_kwh:
+                    can_start = True
+                    break
+            if not can_start:
+                print("\nSome deliveries are impossible with current obstacles/capacity:", remaining)
+                break
 
     print("\n=== All trips complete (or as many as feasible) ===")
     print(f"Grand total movement energy (kWh): {grand_total_energy:.3f}")
-    if remaining:
-        print("Undelivered:", remaining)
-    else:
-        print("All deliveries served.")
 
 # -----------------------
 # Pretty print grid
@@ -455,15 +707,14 @@ def print_grid(rows: int, cols: int, warehouse: Coord, deliveries: List[Coord],
 # Demo / run
 # -----------------------
 if __name__ == "__main__":
-    # You can tweak these or wire in your own scenario
-    rows, cols = 8, 8
-    num_deliveries = 5
-    carry_capacity = 7        # kg
-    battery_capacity = 4.0    # kWh
+    rows, cols = 10, 10
+    num_deliveries = 7
+    carry_capacity = 10       # kg
+    battery_capacity = 5.0    # kWh
     cruise_speed = 40.0       # km/h
-    seed = 42                 # fixed for reproducibility
+    seed = None
 
-    blocked = make_no_fly_zones(rows, cols, count=2, seed=seed, max_w=1, max_h=1)
+    blocked = make_no_fly_zones(rows, cols, count=2, seed=seed, max_w=3, max_h=3)
     warehouse = random_warehouse(rows, cols, blocked, seed=seed)
     deliveries = sample_delivery_points(rows, cols, num_deliveries, avoid=warehouse, blocked=blocked, seed=seed)
     demands = assign_demands(deliveries, low=1, high=3, seed=seed)
@@ -472,9 +723,9 @@ if __name__ == "__main__":
 
     print("Warehouse:", warehouse)
     print("Deliveries & demands:", demands)
-    print("\nOptimizing trips…")
-    
-    run_optimized_trips_with_plots(
+    print("\nStarting trips…")
+
+    run_all_trips(
         rows, cols,
         warehouse=warehouse,
         deliveries=deliveries,
@@ -483,6 +734,10 @@ if __name__ == "__main__":
         carry_capacity=carry_capacity,
         battery_capacity_kwh=battery_capacity,
         cruise_speed_kmh=cruise_speed
-    )   
+    )
+
     polt_energy()
+    plotting_take_off()
+    plotting_landing() 
+    
 
