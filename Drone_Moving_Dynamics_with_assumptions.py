@@ -99,70 +99,71 @@ def drone_dynamics(t, y):
 
     return [dzdt, dvzdt, dxdt, dvxdt, dEdt]
 
-# ----------------------------
-# Integration setup
-# ----------------------------
-y0 = [0, 0, 0, 0, E_avail]                    # initial altitude, vertical speed, energy
-t_span = (0, 1000)                              # simulate up to 50 s (should reach speed)
-t_eval = np.linspace(t_span[0], t_span[1], 3000)
-
-sol = solve_ivp(drone_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
-
-# ----------------------------
-# Extract results
-# ----------------------------
-z = sol.y[0]
-vz = sol.y[1]
-x = sol.y[2]
-vx = sol.y[3]
-E = sol.y[4]
-t = sol.t
-P_loss = (E_avail - E) / 3600  # convert J to Wh
-
-# Stop when target distance reached
-idx_arr = np.where(x >= x_target)[0]
-if len(idx_arr) > 0:
-    idx = idx_arr[0]
-    z = z[:idx]
-    vz = vz[:idx]
-    x = x[:idx]
-    vx = vx[:idx]
-    E = E[:idx]
-    t = t[:idx]
-    P_loss = P_loss[:idx]
-else:
-    print("Warning: x never reached x_target during simulation.")
-
-# ----------------------------
-# Plot results
-# ----------------------------
-plt.figure(figsize=(10,6))
-
-plt.subplot(3,1,1)
-plt.plot(t, x, label='Displacement x(t)')
-plt.ylabel('Displacement (m)')
-plt.grid(True)
-plt.legend()
-
-plt.subplot(3,1,2)
-plt.plot(t, vx, label='Horizontal Speed')
-plt.axhline(vx_target, color='r', linestyle='--', label='Target speed')
-plt.ylabel('v_x (m/s)')
-plt.grid(True)
-plt.legend()
-
-plt.subplot(3,1,3)
-plt.plot(t, P_loss, label='Energy used')
-plt.ylabel('Energy used (Wh)')
-plt.xlabel('Time (s)')
-plt.grid(True)
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
-print(f"Reached velocity: {vx[-1]:.2f} m in {t[-1]:.2f} s")
-print(f"Traveled distance: {x[-1]:.2f} m in {t[-1]:.2f} s")
-print(f"Altitude gained: {z[-1]:.2f} m in {t[-1]:.2f} s")
-print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
+def plotting_drone_moving():
+    # ----------------------------
+    # Integration setup
+    # ----------------------------
+    y0 = [0, 0, 0, 0, E_avail]                    # initial altitude, vertical speed, energy
+    t_span = (0, 1000)                              # simulate up to 50 s (should reach speed)
+    t_eval = np.linspace(t_span[0], t_span[1], 3000)
+    
+    sol = solve_ivp(drone_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
+    
+    # ----------------------------
+    # Extract results
+    # ----------------------------
+    z = sol.y[0]
+    vz = sol.y[1]
+    x = sol.y[2]
+    vx = sol.y[3]
+    E = sol.y[4]
+    t = sol.t
+    P_loss = (E_avail - E) / 3600  # convert J to Wh
+    
+    # Stop when target distance reached
+    idx_arr = np.where(x >= x_target)[0]
+    if len(idx_arr) > 0:
+        idx = idx_arr[0]
+        z = z[:idx]
+        vz = vz[:idx]
+        x = x[:idx]
+        vx = vx[:idx]
+        E = E[:idx]
+        t = t[:idx]
+        P_loss = P_loss[:idx]
+    else:
+        print("Warning: x never reached x_target during simulation.")
+    
+    # ----------------------------
+    # Plot results
+    # ----------------------------
+    plt.figure(figsize=(10,6))
+    
+    plt.subplot(3,1,1)
+    plt.plot(t, x, label='Displacement x(t)')
+    plt.ylabel('Displacement (m)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,2)
+    plt.plot(t, vx, label='Horizontal Speed')
+    plt.axhline(vx_target, color='r', linestyle='--', label='Target speed')
+    plt.ylabel('v_x (m/s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,3)
+    plt.plot(t, P_loss, label='Energy used')
+    plt.ylabel('Energy used (Wh)')
+    plt.xlabel('Time (s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    print(f"Reached velocity: {vx[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Traveled distance: {x[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Altitude gained: {z[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
 
