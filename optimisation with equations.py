@@ -1,7 +1,6 @@
 import random
 import math
 import heapq
-from collections import deque
 from typing import Tuple, List, Dict, Optional, Set
 
 Coord = Tuple[int, int]
