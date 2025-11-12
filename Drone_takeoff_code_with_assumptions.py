@@ -23,6 +23,18 @@ E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
 m_frame = 5.93           # frame mass (kg)
 m_payload = 0.5         # payload mass (kg)
 m_battery = 9.5         # x6 battery mass (kg)
+A_top = 0.25            # Effective top area of drone (m^2)
+A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 5.0                # battery capacity (Ah)
+P_av = 5                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 1.5           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 0.5         # battery mass (kg)
 m_tot = m_frame + m_payload + m_battery  # total mass (kg)
 
 # Desired takeoff climb speed target
