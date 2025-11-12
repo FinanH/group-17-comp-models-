@@ -11,6 +11,18 @@ from scipy.integrate import solve_ivp
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
 C_d = 1                 # Drag coefficient
+A_top = 0.175674            # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 4.5                # battery capacity (Ah)
+P_av = 12                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 5.93           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 9.5         # x6 battery mass (kg)
 A_top = 0.25            # Effective top area of drone (m^2)
 A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
 eta = 0.75              # overall efficiency (motor * prop)
@@ -62,58 +74,58 @@ def takeoff_dynamics(t, y):
 # ----------------------------
 # Integration setup
 # ----------------------------
-
-y0 = [0.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
-t_span = (0, 30)                              # simulate up to 30 s (should reach ~10 m)
-t_eval = np.linspace(t_span[0], t_span[1], 300)
-
-sol = solve_ivp(takeoff_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
-
-# ----------------------------
-# Extract results
-# ----------------------------
-z = sol.y[0]
-vz = sol.y[1]
-E = sol.y[2]
-t = sol.t
-P_loss = (E_avail - E) / 3600  # convert J to Wh
-
-# Stop when target altitude reached
-idx = np.where(z >= alt_target)[0][0]
-z = z[:idx]
-vz = vz[:idx]
-E = E[:idx]
-t = t[:idx]
-P_loss = P_loss[:idx]
-
-# ----------------------------
-# Plot results
-# ----------------------------
-
-plt.figure(figsize=(10,6))
-
-plt.subplot(3,1,1)
-plt.plot(t, z, label='Altitude z(t)')
-plt.ylabel('Altitude (m)')
-plt.grid(True)
-plt.legend()
-
-plt.subplot(3,1,2)
-plt.plot(t, vz, label='Vertical Speed')
-plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
-plt.ylabel('v_z (m/s)')
-plt.grid(True)
-plt.legend()
-
-plt.subplot(3,1,3)
-plt.plot(t, P_loss, label='Energy used')
-plt.ylabel('Energy used (Wh)')
-plt.xlabel('Time (s)')
-plt.grid(True)
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
-print(f"Reached altitude: {z[-1]:.2f} m in {t[-1]:.2f} s")
-print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
+def plottin_take_off():
+    y0 = [0.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
+    t_span = (0, 30)                              # simulate up to 30 s (should reach ~10 m)
+    t_eval = np.linspace(t_span[0], t_span[1], 300)
+    
+    sol = solve_ivp(takeoff_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
+    
+    # ----------------------------
+    # Extract results
+    # ----------------------------
+    z = sol.y[0]
+    vz = sol.y[1]
+    E = sol.y[2]
+    t = sol.t
+    P_loss = (E_avail - E) / 3600  # convert J to Wh
+    
+    # Stop when target altitude reached
+    idx = np.where(z >= alt_target)[0][0]
+    z = z[:idx]
+    vz = vz[:idx]
+    E = E[:idx]
+    t = t[:idx]
+    P_loss = P_loss[:idx]
+    
+    # ----------------------------
+    # Plot results
+    # ----------------------------
+    
+    plt.figure(figsize=(10,6))
+    
+    plt.subplot(3,1,1)
+    plt.plot(t, z, label='Altitude z(t)')
+    plt.ylabel('Altitude (m)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,2)
+    plt.plot(t, vz, label='Vertical Speed')
+    plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+    plt.ylabel('v_z (m/s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.subplot(3,1,3)
+    plt.plot(t, P_loss, label='Energy used')
+    plt.ylabel('Energy used (Wh)')
+    plt.xlabel('Time (s)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    print(f"Reached altitude: {z[-1]:.2f} m in {t[-1]:.2f} s")
+    print(f"Energy used: {(E_avail - E[-1])/3600:.2f} Wh ({100*(E_avail-E[-1])/E_avail:.2f} % of battery)")
