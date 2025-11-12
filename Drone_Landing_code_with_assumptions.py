@@ -1,6 +1,3 @@
-
-
-
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -10,6 +7,19 @@ from scipy.integrate import solve_ivp
 # ----------------------------
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
+C_d = 0.9                 # Drag coefficient
+A_top = 0.175674            # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
+eta = 0.88              # overall efficiency (motor * prop)
+Vb = 22.2               # battery voltage (V)
+Cb = 4.5                # battery capacity (Ah)
+P_av = 12                # Avionics power (W)
+usable_frac = 0.8       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 5.93           # frame mass (kg)
+m_payload = 0.5         # payload mass (kg)
+m_battery = 9.5         # x6 battery masses (kg)
 C_d = 1                 # Drag coefficient
 A_top = 0.25            # Effective top area of drone (m^2)
 A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
