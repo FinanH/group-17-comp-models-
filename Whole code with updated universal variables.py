@@ -26,96 +26,37 @@ from scipy.integrate import solve_ivp
 # ----------------------------
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
-C_d = 0.9                 # Drag coefficient
-A_top = 0.175674            # Effective top area of drone (m^2)
-A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
-eta = 0.88              # overall efficiency (motor * prop)
-Vb = 22.2               # battery voltage (V)
-Cb = 4.5                # battery capacity (Ah)
-P_av = 12                # Avionics power (W)
-usable_frac = 0.8       # usable fraction of battery
-E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
-
-m_frame = 5.93           # frame mass (kg)
-m_payload = 0.5         # payload mass (kg)
-m_battery = 9.5         # x6 battery masses (kg)
-C_d = 1                 # Drag coefficient
-A_top = 0.25            # Effective top area of drone (m^2)
-A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
-eta = 0.75              # overall efficiency (motor * prop)
-Vb = 22.2               # battery voltage (V)
-Cb = 5.0                # battery capacity (Ah)
-P_av = 5                # Avionics power (W)
-usable_frac = 0.8       # usable fraction of battery
-E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
-
-m_frame = 1.5           # frame mass (kg)
-m_payload = 0.5         # payload mass (kg)
-m_battery = 0.5         # battery mass (kg)
-m_tot = m_frame + m_payload + m_battery  # total mass (kg)
-
-# Desired takeoff climb speed target
-v_target = 2.0          # m/s (steady climb)
-alt_target = 30.0       # m target altitude (stop integration here)
-
-# ----------------------------
-# Drone + environment parameters
-# ----------------------------
-g = 9.81                # gravity (m/s^2)
-rho = 1.225             # air density (kg/m^3)
-C_d = 1                 # Drag coefficient
-A_top = 0.175674            # Effective top area of drone (m^2)
-A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
-eta = 0.75              # overall efficiency (motor * prop)
-Vb = 22.2               # battery voltage (V)
-Cb = 4.5                # battery capacity (Ah)
-P_av = 12                # Avionics power (W)
-usable_frac = 0.8       # usable fraction of battery
-E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
-
-m_frame = 5.93           # frame mass (kg)
-m_payload = 0.5         # payload mass (kg)
-m_battery = 9.5         # x6 battery mass (kg)
-A_top = 0.25            # Effective top area of drone (m^2)
-A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
-eta = 0.75              # overall efficiency (motor * prop)
-Vb = 22.2               # battery voltage (V)
-Cb = 5.0                # battery capacity (Ah)
-P_av = 5                # Avionics power (W)
-usable_frac = 0.8       # usable fraction of battery
-E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
-
-m_frame = 1.5           # frame mass (kg)
-m_payload = 0.5         # payload mass (kg)
-m_battery = 0.5         # battery mass (kg)
-m_tot = m_frame + m_payload + m_battery  # total mass (kg)
-
-# Desired takeoff climb speed target
-v_target = 2.0          # m/s (steady climb)
-alt_target = 30.0       # m target altitude (stop integration here)
-
-
-# ----------------------------
-# Drone + environment parameters
-# ----------------------------
-g = 9.81                # gravity (m/s^2)
-rho = 1.225             # air density (kg/m^3)
 C_dx = 0.8              # Drag coefficient horizontal
-C_dz = 1                # Drag coefficient verically
-A_front = 0.1           # Effective front area of drone (m^2)
-A_top = 0.25            # Effective top area of drone (m^2)
-A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
+C_dz = 0.9              # Drag coefficient vertical
+A_front = 1.154         # Effective front area of drone (m^2)
+A_top = 0.175674        # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2)
 eta = 0.75              # overall efficiency (motor * prop)
-Vb = 22.2               # battery voltage (V)
-Cb = 5.0                # battery capacity (Ah)
-P_av = 5                # Avionics power (W)
-usable_frac = 0.8       # usable fraction of battery
+Vb = 133.2              # battery voltage (V)
+Cb = 27                 # battery capacity (Ah)
+P_av = 24               # avionics power (W)
+usable_frac = 0.9
 E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
 
-m_frame = 1.5           # frame mass (kg)
-m_payload = 0.5         # payload mass (kg)
-m_battery = 0.5         # battery mass (kg)
-m_tot = m_frame + m_payload + m_battery  # total mass (kg)
+m_frame = 5.93
+m_payload = 6
+m_battery = 3.57
+m_tot = m_frame + m_payload + m_battery
+
+
+# Desired takeoff climb speed target
+v_t_target = 2.0          # m/s (steady climb)
+alt_target = 30.0       # m target altitude (stop integration here)
+
+
+
+
+
+# Desired landing  speed target
+v_l_target = -0.50          # m/s (steady decline)
+
+
+
 
 # Desired takeoff climb speed target
 vx_target = 15.0            # foward cruise (m/s)
@@ -269,8 +210,8 @@ def takeoff_dynamics(t, y):
     # Simple proportional controller on vertical speed:
     k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
                             
-    Thurst = m_tot * (g + k_p * (v_target - vz))  # Thurst (N)
-    Drag_z = 0.5*rho*C_d*A_top*vz* abs(vz)        # vertical drag (N)
+    Thurst = m_tot * (g + k_p * (v_t_target - vz))  # Thurst (N)
+    Drag_z = 0.5*rho*C_dz*A_top*vz* abs(vz)        # vertical drag (N)
    
     # --- Power model ---
    
@@ -328,7 +269,7 @@ def plotting_take_off():
     
     plt.subplot(3,1,2)
     plt.plot(t, vz, label='Vertical Speed')
-    plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+    plt.axhline(v_t_target, color='r', linestyle='--', label='Target speed')
     plt.ylabel('v_z (m/s)')
     plt.grid(True)
     plt.legend()
@@ -358,8 +299,8 @@ def landing_dynamics(t, y):
     # Simple proportional controller on vertical speed:
     k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
                             
-    Thurst = m_tot * (g + k_p * (v_target - vz))  # Thurst (N)
-    Drag_z = 0.5*rho*C_d*A_top*vz* abs(vz)        # vertical drag (N)
+    Thurst = m_tot * (g + k_p * (v_l_target - vz))  # Thurst (N)
+    Drag_z = 0.5*rho*C_dz*A_top*vz* abs(vz)        # vertical drag (N)
    
     # --- Power model ---
    
@@ -417,7 +358,7 @@ def plotting_landing():
     
     plt.subplot(3,1,2)
     plt.plot(t, vz, label='Vertical Speed')
-    plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+    plt.axhline(v_l_target, color='r', linestyle='--', label='Target speed')
     plt.ylabel('v_z (m/s)')
     plt.grid(True)
     plt.legend()
@@ -905,4 +846,3 @@ if __name__ == "__main__":
     plotting_take_off()
     plotting_landing() 
     plotting_drone_moving()
-
