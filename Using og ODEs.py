@@ -7,7 +7,8 @@
 # - Cruise uses an induced + drag + fixed power model.
 # - The drone does multiple trips from a warehouse, recharging fully each time.
 # - We track energy usage and battery state along each path.
-#
+#LANDING_KWH_BASE
+
 # On top of that, there are some numerical analysis “showpieces”:
 # - ODE solving with solve_ivp for vertical motion.
 # - Custom incremental-search + bisection root finding (no fancy library solvers).
@@ -34,7 +35,7 @@ from matplotlib.patches import Rectangle, FancyArrowPatch
 # ----------------------------
 # Here we define one specific battery pack and keep everything consistent with it.
 
-Vb = 133.2              # battery voltage (V)
+Vb = 22.2              # battery voltage (V)
 Cb = 27                  # Battery capacity (Ah)
 usable_frac = 0.9       # We don't want to drain it 100% in real life
 
@@ -336,6 +337,14 @@ def takeoff_dynamics(t, y):
 
     return [dzdt, dvzdt, dEdt]
 
+def takeoff_energy_kwh_for(payload_kg: float) -> float:
+    """
+    Takeoff energy for a given payload.
+    We linearly scale the baseline takeoff energy by total mass ratio.
+    """
+    total_mass = m_frame + m_battery + payload_kg
+    return TAKEOFF_KWH_BASE * (total_mass / m_tot)
+
 
 def landing_dynamics(t, y):
     z, vz, E = y
@@ -394,39 +403,6 @@ def power_model(W, v, params):
 # We compute a "baseline" takeoff & landing energy with the nominal mass,
 # then scale with total mass for other payloads (simple linear scaling assumption).
 
-def compute_takeoff_energy_kwh():
-    """
-    Integrate takeoff_dynamics from z=0 to alt_target using solve_ivp
-    to get baseline takeoff energy (for nominal mass).
-    """
-    global M_TAKEOFF, VH_TAKEOFF
-    M_TAKEOFF = m_tot
-    VH_TAKEOFF = np.sqrt((M_TAKEOFF * g) / (2 * rho * A_disk))
-
-    # Start at ground, not moving, full usable energy in the pack
-    y0 = [0.0, 0.0, E_avail]
-    t_span = (0.0, 60.0)
-
-    def event_alt_reached(t, y):
-        return y[0] - alt_target
-
-    event_alt_reached.terminal = True
-    event_alt_reached.direction = 1
-
-    sol = solve_ivp(
-        takeoff_dynamics,
-        t_span,
-        y0,
-        events=event_alt_reached,
-        rtol=1e-6,
-        atol=1e-8,
-        max_step=0.5
-    )
-
-    E_end = sol.y[2][-1]
-    E_used_J = E_avail - E_end
-    return E_used_J / 3.6e6  # J -> kWh
-
 
 def compute_landing_energy_kwh():
     """
@@ -463,17 +439,8 @@ def compute_landing_energy_kwh():
 
 
 # Baseline vertical costs (for the nominal mass)
-TAKEOFF_KWH_BASE = compute_takeoff_energy_kwh()
 LANDING_KWH_BASE = compute_landing_energy_kwh()
-
-
-def takeoff_energy_kwh_for(payload_kg: float) -> float:
-    """
-    Takeoff energy for a given payload.
-    We scale the baseline takeoff energy linearly with total mass.
-    """
-    total_mass = m_frame + m_battery + payload_kg
-    return TAKEOFF_KWH_BASE * (total_mass / m_tot)
+TAKEOFF_KWH_BASE: Optional[float] = None
 
 
 def landing_energy_kwh_for(payload_kg: float) -> float:
@@ -483,6 +450,51 @@ def landing_energy_kwh_for(payload_kg: float) -> float:
     """
     total_mass = m_frame + m_battery + payload_kg
     return LANDING_KWH_BASE * (total_mass / m_tot)
+
+def takeoff_energy_kwh_for(payload_kg: float) -> float:
+    """
+    Takeoff energy for a given payload.
+
+    Uses the existing takeoff_dynamics ODE once (baseline mass),
+    then scales linearly with total mass, same idea as landing_energy_kwh_for.
+    The E state is the 3rd component of the ODE state vector.
+    """
+    global TAKEOFF_KWH_BASE, M_TAKEOFF, VH_TAKEOFF
+
+    # Compute baseline once (for nominal total mass m_tot)
+    if TAKEOFF_KWH_BASE is None:
+        M_TAKEOFF = m_tot
+        VH_TAKEOFF = np.sqrt((M_TAKEOFF * g) / (2 * rho * A_disk))
+
+        # Start at ground, zero vertical speed, full usable energy
+        y0 = [0.0, 0.0, E_avail]
+        t_span = (0.0, 60.0)
+
+        def event_alt_reached(t, y):
+            # stop when altitude reaches alt_target
+            return y[0] - alt_target
+
+        event_alt_reached.terminal = True
+        event_alt_reached.direction = 1
+
+        sol = solve_ivp(
+            takeoff_dynamics,
+            t_span,
+            y0,
+            events=event_alt_reached,
+            rtol=1e-6,
+            atol=1e-8,
+            max_step=0.1
+        )
+
+        # y[2] is E(t), which came from integrating dE/dt (the 3rd returned value of takeoff_dynamics)
+        E_end = sol.y[2][-1]
+        E_used_J = E_avail - E_end
+        TAKEOFF_KWH_BASE = E_used_J / 3.6e6  # J -> kWh
+
+    # Scale baseline takeoff energy with total mass
+    total_mass = m_frame + m_battery + payload_kg
+    return TAKEOFF_KWH_BASE * (total_mass / m_tot)
 
 
 # ---------------------------------------
@@ -558,6 +570,87 @@ def move_energy(t, y):
 
     return [dzdt, dvzdt, dxdt, dvxdt, dEdt]
 
+def move_energy_kwh(distance_km: float, payload_kg: float, cruise_speed_kmh: float) -> float:
+    """
+    Cruise energy for a horizontal grid leg.
+
+    Uses the move_energy ODE:
+      state y = [z, vz, x, vx, E]
+      dE/dt = -P_elec from your ODE.
+
+    We:
+      - Integrate until x reaches distance_km * 1000 m,
+      - Take the difference in E to get energy in Joules,
+      - Convert to kWh,
+      - Scale linearly with total mass for different payloads.
+    """
+    if distance_km <= 0.0 or cruise_speed_kmh <= 0.0:
+        return 0.0
+
+    distance_m = distance_km * 1000.0
+    v = cruise_speed_kmh / 3.6  # m/s
+
+    # We will temporarily change some globals used inside move_energy
+    # so that the leg is flown at constant cruise tilt and level altitude.
+    global x_target, x_cruise_start, z_target
+
+    old_x_target = x_target
+    old_x_cruise_start = x_cruise_start
+    old_z_target = z_target
+
+    try:
+        # Level flight around current cruise altitude
+        z_target = alt_target
+
+        # Force "always cruise tilt": x < huge -> theta = theta_cruise
+        x_target = 1e9
+        x_cruise_start = 1e9
+
+        # Initial state: at cruise altitude, no vertical motion, x=0, vx = cruise speed, full usable energy
+        y0 = [alt_target, 0.0, 0.0, v, E_avail]
+
+        def event_reach_distance(t, y):
+            # Stop integration when x reaches the leg length
+            return y[2] - distance_m
+
+        event_reach_distance.terminal = True
+        event_reach_distance.direction = 1
+
+        # Rough upper bound on time: distance / speed * 5 as safety factor
+        t_end = distance_m / max(v, 0.1) * 5.0
+
+        sol = solve_ivp(
+            move_energy,
+            (0.0, t_end),
+            y0,
+            events=event_reach_distance,
+            rtol=1e-6,
+            atol=1e-8,
+            max_step=0.5
+        )
+
+        # If for some reason the event didn't trigger, fall back to the algebraic model
+        if sol.t_events[0].size == 0:
+            P_W = power_model(payload_kg, v, params)  # Watts
+            P_kW = P_W / 1000.0
+            time_h = distance_km / cruise_speed_kmh
+            return P_kW * time_h
+
+        # E is the 5th state (index 4); E_avail is the initial energy (Joules)
+        E_end = sol.y[4, -1]
+        E_used_J = E_avail - E_end
+        E_base_kwh = max(E_used_J, 0.0) / 3.6e6  # J -> kWh
+
+    finally:
+        # Restore globals so demos & other code still behave as before
+        x_target = old_x_target
+        x_cruise_start = old_x_cruise_start
+        z_target = old_z_target
+
+    # Scale with total mass, same idea as takeoff/landing
+    total_mass = m_frame + m_battery + payload_kg
+    mass_ratio = total_mass / m_tot
+    return E_base_kwh * mass_ratio
 
 
 # -----------------------
@@ -662,6 +755,7 @@ def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coo
 
     This lets us query "shortest path from A to B" very cheaply during routing.
     """
+    global x_target
     dist_km: Dict[Tuple[Coord, Coord], float] = {}
     path_map: Dict[Tuple[Coord, Coord], Path] = {}
 
@@ -683,7 +777,8 @@ def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coo
                         path_map[(s, t)] = []
                     else:
                         path_map[(s, t)] = pt
-
+                        
+                        
     return dist_km, path_map
 
 
