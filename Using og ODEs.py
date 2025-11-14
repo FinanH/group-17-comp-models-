@@ -63,6 +63,15 @@ v_l_target = -0.5
 
 vx_target = 18.0  
 
+x_target = 2000        # target horizontal distance (m)
+z_target = 0
+transition_time = 3    # tilt transition (s)
+
+# Braking tilt
+theta_cruise = np.deg2rad(25)  # cruising tilt
+theta_brake = np.deg2rad(-20)  # braking tilt (negative)
+theta_level = np.deg2rad(0)    # level
+
 # ----------------------------
 # Drone + environment parameters
 # ----------------------------
@@ -84,7 +93,7 @@ vh = np.sqrt((m_tot * g) / (2 * rho * A_disk))  # hover induced velocity (m/s)
 
 # Coefficients for the power model
 k1 = 1.1 / eta
-k2 = 0.5 * rho * C_d * A_top
+k2 = 0.5 * rho * C_dz * A_top
 k3 = P_av
 
 # Keep everything in one params dict so we can pass it around cleanly
