@@ -4,16 +4,20 @@
 # - Physics-based power model for cruise (power_model)
 # - Takeoff/landing energy from ODE, scaled with payload mass
 # - Battery-aware routing with obstacles
-# - Diagonal grid movement (8 directions)
+# - Diagonal grid movement (8 directions, each step = 0.1 km)
+# - Per-trip battery: starts full, drains, then recharges at warehouse
 # - Computational methods:
 #     * ODE integration (solve_ivp)
 #     * Root finding (root_scalar) to find crossover speed
-#     * Interpolation (interp1d) to recreate smooth takeoff curves
+#     * Root finding on interpolated altitude to find time for given height
+#     * Interpolation (interp1d) for smooth takeoff curves
+#     * Interpolation (interp1d) for continuous trip path (position vs time)
 # - Plots:
 #     * Takeoff profile (altitude & battery vs time, interpolated)
 #     * Max range vs payload
 #     * Battery endurance vs payload
-#     * Grid map showing paths, nodes colored by remaining energy (%)
+#     * Grid map showing paths, nodes colored by remaining battery (% of pack)
+#     * Interpolated continuous trip path (x,y vs time)
 #
 # Copy-paste this as a single file.
 
@@ -37,6 +41,9 @@ Vb = 22.2               # battery voltage (V)
 Cb = 4.5                # battery capacity (Ah)
 usable_frac = 0.8       # usable fraction of battery
 E_avail = usable_frac * Vb * Cb * 3600  # Wh -> J
+
+# Battery capacity in kWh from the pack (usable part only)
+BATTERY_CAPACITY_FROM_CELLS_KWH = usable_frac * Vb * Cb / 1000.0
 
 # Masses
 m_frame = 1.5           # frame mass (kg)
@@ -86,6 +93,9 @@ params = {
     "v_hover": vh,
     "E_avail": E_avail,
 }
+
+# For plotting battery %
+BATTERY_CAPACITY_KWH_GLOBAL: Optional[float] = None
 
 # Globals for vertical ODE
 M_TAKEOFF = m_tot
@@ -217,7 +227,7 @@ def move_energy_kwh(distance_km: float, load_kg: float, speed_kmh: float) -> flo
     if speed_kmh <= 0:
         raise ValueError("speed_kmh must be > 0")
 
-    v = speed_kmh / 3.6
+    v = speed_kmh / 3.6  # m/s
     distance_m = distance_km * 1000.0
     time_s = distance_m / v
 
@@ -252,14 +262,21 @@ def neighbors(r: int, c: int, rows: int, cols: int) -> List[Coord]:
 
 
 def step_cost(u: Coord, v: Coord) -> float:
+    """
+    Distance between two neighboring cells in KM.
+    Cardinal step = 0.1 km (100 m)
+    Diagonal step = 0.1 * sqrt(2) km
+    """
+    base = 1  # km per cardinal step
     dr = v[0] - u[0]
     dc = v[1] - u[1]
     if dr != 0 and dc != 0:
-        return math.sqrt(2.0)
-    return 1.0
+        return base * math.sqrt(2.0)
+    return base
 
 
 def dijkstra_on_grid(rows: int, cols: int, blocked: Set[Coord], start: Coord):
+    # dist is in KM directly
     dist: Dict[Coord, float] = {start: 0.0}
     prev: Dict[Coord, Coord] = {}
     pq: List[Tuple[float, Coord]] = [(0.0, start)]
@@ -275,7 +292,7 @@ def dijkstra_on_grid(rows: int, cols: int, blocked: Set[Coord], start: Coord):
             if (vr, vc) in blocked:
                 continue
 
-            sc = step_cost(u, (vr, vc))
+            sc = step_cost(u, (vr, vc))  # km
             nd = d + sc
             v = (vr, vc)
 
@@ -302,6 +319,11 @@ def reconstruct_path(prev: Dict[Coord, Coord], start: Coord, goal: Coord) -> Opt
 
 
 def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coord]):
+    """
+    Returns:
+        dist_km[(s, t)]  = shortest path distance in KM
+        path_map[(s, t)] = list of grid cells from s to t
+    """
     dist_km: Dict[Tuple[Coord, Coord], float] = {}
     path_map: Dict[Tuple[Coord, Coord], Path] = {}
 
@@ -316,7 +338,7 @@ def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coo
                     dist_km[(s, t)] = float("inf")
                     path_map[(s, t)] = []
                 else:
-                    dist_km[(s, t)] = d[t] / 1000.0  # grid units -> "m" -> km
+                    dist_km[(s, t)] = d[t]  # already in km
                     pt = reconstruct_path(prev, s, t)
                     if pt is None:
                         dist_km[(s, t)] = float("inf")
@@ -328,13 +350,12 @@ def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coo
 
 
 # -----------------------
-# Root-finding: crossover speed
+# Root-finding: crossover speed (power balance)
 # -----------------------
 def crossover_speed_ms_for_payload(payload_kg: float) -> Optional[float]:
     """
     Use root finding to solve P_drag(v) - P_ind(v) = 0
     => finds the speed where drag power equals induced power.
-    This uses root_scalar (Brent) = ROOT FINDING example.
     """
     g_ = params["g"]
     m0 = params["m_dry"]
@@ -359,7 +380,6 @@ def crossover_speed_ms_for_payload(payload_kg: float) -> Optional[float]:
 
 
 def print_crossover_speeds():
-    """Print crossover speeds found via root finding for various payloads."""
     print("Speed where induced and drag power are equal (root-finding):")
     for payload in [0.0, 2.0, 5.0, 10.0]:
         v = crossover_speed_ms_for_payload(payload)
@@ -371,7 +391,7 @@ def print_crossover_speeds():
 
 
 # -----------------------
-# Trip-by-trip planner (returns paths + energy per step)
+# Trip-by-trip planner (per-trip battery, returns paths + SOC per step)
 # -----------------------
 def run_all_trips(
     rows: int,
@@ -385,10 +405,11 @@ def run_all_trips(
     cruise_speed_kmh: float = 40.0
 ) -> List[Tuple[Path, List[float]]]:
     """
-    Run all trips.
-    Returns a list of (trip_cells, trip_energy_kwh) where:
-      trip_cells[i]       = grid coord of step i
-      trip_energy_kwh[i]  = remaining motion energy after reaching that cell (kWh)
+    Run all trips. Each trip starts with a FULL battery (recharge at warehouse).
+
+    Returns a list of (trip_cells, trip_soc_kwh) where:
+      trip_cells[i]   = grid coord of step i
+      trip_soc_kwh[i] = remaining battery energy (kWh) after reaching that cell
     """
     points = [warehouse] + deliveries
     dist_km, path = precompute_pairs(rows, cols, points, blocked)
@@ -407,30 +428,33 @@ def run_all_trips(
         print("These deliveries are impossible (capacity or obstacles):", impossible)
 
     trip_idx = 0
-    grand_total_energy = 0.0          # total energy over all trips (kWh)
+    total_energy_used = 0.0
     all_trip_infos: List[Tuple[Path, List[float]]] = []
 
     while remaining:
         trip_idx += 1
         carried = min(carry_capacity, sum(demands[d] for d in remaining))
 
-        takeoff_E = takeoff_energy_kwh_for(carried)
-        landing_reserve_max = landing_energy_kwh_for(carried)
+        # New battery (recharged) at the start of each trip
+        battery_soc = battery_capacity_kwh
+        trip_energy_used = 0.0
 
-        if takeoff_E + landing_reserve_max >= battery_capacity_kwh:
+        # Takeoff check
+        takeoff_E = takeoff_energy_kwh_for(carried)
+        landing_reserve_min = landing_energy_kwh_for(0.0)
+
+        if takeoff_E + landing_reserve_min >= battery_capacity_kwh:
             print(f"\nTrip {trip_idx}: cannot even take off and land with current battery capacity for carried={carried} kg.")
             break
 
-        # Motion energy after takeoff (for coloring / tracking)
-        energy = battery_capacity_kwh - takeoff_E
-        grand_total_energy += takeoff_E
-
-        # NEW: track energy used on THIS trip
-        trip_energy_used = takeoff_E
+        # Deduct takeoff from SOC
+        battery_soc -= takeoff_E
+        trip_energy_used += takeoff_E
+        total_energy_used += takeoff_E
 
         current = warehouse
         trip_cells: Path = [warehouse]
-        trip_energy: List[float] = [energy]
+        trip_soc_list: List[float] = [battery_soc]
 
         trip_legs = []
         served_this_trip = []
@@ -438,8 +462,7 @@ def run_all_trips(
         # ----- inner routing loop -----
         while True:
             landing_E_needed = landing_energy_kwh_for(carried)
-            reserved_for_landing = landing_E_needed
-            available_for_motion = energy - reserved_for_landing
+            available_for_motion = battery_soc - landing_E_needed
 
             if available_for_motion <= 0:
                 break
@@ -466,14 +489,13 @@ def run_all_trips(
                     candidates.append((dist_to_km, d, go_e, back_e, new_load))
 
             if not candidates:
-                # Try to go home directly
+                # Try to go home directly if not at warehouse
                 if current != warehouse:
                     dist_home_km = dist_km[(current, warehouse)]
                     back_e = move_energy_kwh(dist_home_km, max(carried, 0.0), cruise_speed_kmh)
 
                     landing_E_needed = landing_energy_kwh_for(carried)
-                    reserved_for_landing = landing_E_needed
-                    available_for_motion = energy - reserved_for_landing
+                    available_for_motion = battery_soc - landing_E_needed
                     if back_e > available_for_motion:
                         break
 
@@ -485,14 +507,16 @@ def run_all_trips(
                         coords_seq = [current] + full_segment
                         for u, v in zip(coords_seq[:-1], coords_seq[1:]):
                             step_costs.append(step_cost(u, v))
-                        total_dist = sum(step_costs)
+                        total_dist_km = sum(step_costs)
 
                         for cell, sc in zip(full_segment, step_costs):
-                            frac = sc / total_dist if total_dist > 0 else 0.0
+                            frac = sc / total_dist_km if total_dist_km > 0 else 0.0
                             dE_cell = back_e * frac
-                            energy -= dE_cell
+                            battery_soc -= dE_cell
+                            trip_energy_used += dE_cell
+                            total_energy_used += dE_cell
                             trip_cells.append(cell)
-                            trip_energy.append(energy)
+                            trip_soc_list.append(battery_soc)
 
                     trip_legs.append({
                         'type': 'move',
@@ -502,8 +526,6 @@ def run_all_trips(
                         'load_before_kg': max(carried, 0.0),
                         'energy_kwh': back_e
                     })
-                    grand_total_energy += back_e
-                    trip_energy_used += back_e
                     current = warehouse
 
                 break
@@ -521,13 +543,16 @@ def run_all_trips(
                 coords_seq = [current] + full_segment
                 for u, v in zip(coords_seq[:-1], coords_seq[1:]):
                     step_costs.append(step_cost(u, v))
-                total_dist = sum(step_costs)
+                total_dist_km = sum(step_costs)
+
                 for cell, sc in zip(full_segment, step_costs):
-                    frac = sc / total_dist if total_dist > 0 else 0.0
+                    frac = sc / total_dist_km if total_dist_km > 0 else 0.0
                     dE_cell = go_e * frac
-                    energy -= dE_cell
+                    battery_soc -= dE_cell
+                    trip_energy_used += dE_cell
+                    total_energy_used += dE_cell
                     trip_cells.append(cell)
-                    trip_energy.append(energy)
+                    trip_soc_list.append(battery_soc)
 
             trip_legs.append({
                 'type': 'move',
@@ -537,11 +562,9 @@ def run_all_trips(
                 'load_before_kg': carried,
                 'energy_kwh': go_e
             })
-            grand_total_energy += go_e
-            trip_energy_used += go_e
             current = target
 
-            # Deliver payload
+            # Deliver payload at target
             dmd = demands[target]
             carried -= dmd
             served_this_trip.append((target, dmd))
@@ -553,14 +576,13 @@ def run_all_trips(
             })
             remaining.remove(target)
 
-            # If empty payload and not at warehouse, go home
+            # If empty payload and not at warehouse, go home empty
             if carried == 0 and current != warehouse:
                 dist_home_km = dist_km[(current, warehouse)]
                 back_e2 = move_energy_kwh(dist_home_km, 0.0, cruise_speed_kmh)
 
                 landing_E_needed_empty = landing_energy_kwh_for(0.0)
-                reserved_for_landing = landing_E_needed_empty
-                available_for_motion = energy - reserved_for_landing
+                available_for_motion = battery_soc - landing_E_needed_empty
                 if back_e2 > available_for_motion:
                     break
 
@@ -572,13 +594,15 @@ def run_all_trips(
                     coords_seq = [current] + full_segment
                     for u, v in zip(coords_seq[:-1], coords_seq[1:]):
                         step_costs.append(step_cost(u, v))
-                    total_dist = sum(step_costs)
+                    total_dist_km = sum(step_costs)
                     for cell, sc in zip(full_segment, step_costs):
-                        frac = sc / total_dist if total_dist > 0 else 0.0
+                        frac = sc / total_dist_km if total_dist_km > 0 else 0.0
                         dE_cell = back_e2 * frac
-                        energy -= dE_cell
+                        battery_soc -= dE_cell
+                        trip_energy_used += dE_cell
+                        total_energy_used += dE_cell
                         trip_cells.append(cell)
-                        trip_energy.append(energy)
+                        trip_soc_list.append(battery_soc)
 
                 trip_legs.append({
                     'type': 'move',
@@ -588,17 +612,18 @@ def run_all_trips(
                     'load_before_kg': 0.0,
                     'energy_kwh': back_e2
                 })
-                grand_total_energy += back_e2
-                trip_energy_used += back_e2
                 current = warehouse
                 break
 
-        # Landing energy (not mapped to a specific cell)
+        # End-of-trip landing
         landing_E_final = landing_energy_kwh_for(carried)
-        trip_legs.append({'type': 'landing', 'energy_kwh': landing_E_final})
-        grand_total_energy += landing_E_final
+        if battery_soc < landing_E_final:
+            print(f"Warning: battery_soc < landing_E_final on trip {trip_idx}, clamping at 0.")
+            landing_E_final = battery_soc
+        battery_soc -= landing_E_final
         trip_energy_used += landing_E_final
-        energy -= landing_E_final
+        total_energy_used += landing_E_final
+        trip_legs.append({'type': 'landing', 'energy_kwh': landing_E_final})
 
         print(f"\n=== Trip {trip_idx} ===")
         if served_this_trip:
@@ -624,54 +649,25 @@ def run_all_trips(
             elif leg['type'] == 'landing':
                 print(f"  {i:02d}. LANDING energy_kwh={leg['energy_kwh']:.3f}")
 
-        # NEW: print per-trip battery usage as %
         trip_pct = 100.0 * trip_energy_used / battery_capacity_kwh
         print(f"Trip {trip_idx} energy use: {trip_energy_used:.3f} kWh "
               f"({trip_pct:.1f}% of a {battery_capacity_kwh:.2f} kWh battery)")
+        print(f"Battery at end of trip {trip_idx} (before recharge): "
+              f"{battery_soc:.3f} kWh ({100.0 * battery_soc / battery_capacity_kwh:.1f}% of pack)")
 
-        print(f"Trip {trip_idx} ended at: {current}")
-        print("Remaining deliveries:", remaining if remaining else "None")
+        # "Recharge" for next trip
+        print(f"Recharging battery back to {battery_capacity_kwh:.3f} kWh for next trip.\n")
 
-        all_trip_infos.append((trip_cells[:], trip_energy[:]))
+        all_trip_infos.append((trip_cells[:], trip_soc_list[:]))
 
-        # Check possible future trips
-        if remaining:
-            can_start = False
-            start_load = min(carry_capacity, sum(demands[x] for x in remaining))
-            takeoff_next = takeoff_energy_kwh_for(start_load)
-            landing_next = landing_energy_kwh_for(0.0)
-            max_motion_energy = max(0.0, battery_capacity_kwh - (takeoff_next + landing_next))
-
-            if max_motion_energy <= 0:
-                print("\nNo energy left for motion after takeoff/landing on any future trip.")
-                break
-
-            for d in remaining:
-                dmd = demands[d]
-                if dmd > carry_capacity:
-                    continue
-                dist_to_km = dist_km[(warehouse, d)]
-                dist_back_km = dist_km[(d, warehouse)]
-                if dist_to_km == float("inf") or dist_back_km == float("inf"):
-                    continue
-
-                go_e = move_energy_kwh(dist_to_km, start_load, cruise_speed_kmh)
-                back_e = move_energy_kwh(dist_back_km, max(start_load - dmd, 0.0), cruise_speed_kmh)
-                if go_e + back_e <= max_motion_energy:
-                    can_start = True
-                    break
-
-            if not can_start:
-                print("\nSome deliveries are impossible with current obstacles/capacity/battery:", remaining)
-                break
+        if not remaining:
+            break
 
     print("\n=== All trips complete (or as many as feasible) ===")
-    total_pct = 100.0 * grand_total_energy / battery_capacity_kwh
-    print(f"Grand total energy (kWh) including takeoff/landing: {grand_total_energy:.3f} kWh "
-          f"({total_pct:.1f}% of a {battery_capacity_kwh:.2f} kWh battery)")
+    print(f"Total energy used across all trips: {total_energy_used:.3f} kWh "
+          f"(equivalent to {total_energy_used / battery_capacity_kwh:.2f} full battery cycles)")
 
     return all_trip_infos
-
 
 
 # -----------------------
@@ -710,14 +706,17 @@ def print_vertical_energy_table():
 
 
 # -----------------------
-# Plot: takeoff profile (with interpolation)
+# Plot: takeoff profile (with interpolation + root finding on altitude)
 # -----------------------
 def plot_takeoff_profile():
     """
     Solve ODE for takeoff (solve_ivp), then use interp1d to
-    reconstruct smoother altitude & battery curves (INTERPOLATION example).
+    reconstruct smoother altitude & battery curves.
+
+    Also uses root finding on the interpolated altitude(t) to find
+    the time when altitude = 15 m.
     """
-    global M_TAKEOFF, VH_TAKEOFF
+    global M_TAKEOFF, VH_TAKEOFF, g
     M_TAKEOFF = m_tot
     VH_TAKEOFF = np.sqrt((M_TAKEOFF * g) / (2 * rho * A_disk))
 
@@ -744,7 +743,7 @@ def plot_takeoff_profile():
     z = sol.y[0]
     E = sol.y[2] / 3.6e6
 
-    # --- interpolation / recreation of a smooth curve from discrete ODE output ---
+    # interpolation
     f_alt = interp1d(t, z, kind="cubic")
     f_E = interp1d(t, E, kind="cubic")
     t_dense = np.linspace(t[0], t[-1], 300)
@@ -761,9 +760,28 @@ def plot_takeoff_profile():
     ax2.plot(t_dense, E_dense, linestyle="--", label="Battery (kWh)")
     ax2.set_ylabel("Battery (kWh)")
 
-    lines, labels = ax1.get_legend_handles_labels()
+    # Root-finding on altitude = 15 m
+    target_alt = 15.0
+
+    def g(tval):
+        return float(f_alt(tval) - target_alt)
+
+    try:
+        sol_root = root_scalar(g, bracket=[t_dense[0], t_dense[-1]], method="brentq")
+        if sol_root.converged:
+            t_hit = sol_root.root
+            z_hit = float(f_alt(t_hit))
+            E_hit = float(f_E(t_hit))
+            print(f"Interpolated altitude {target_alt:.1f} m reached at t ≈ {t_hit:.2f} s, battery ≈ {E_hit:.3f} kWh")
+
+            ax1.axvline(t_hit, color="grey", linestyle=":", linewidth=1)
+            ax1.plot(t_hit, z_hit, "o", color="red", label=f"{target_alt:.1f} m point")
+    except ValueError:
+        print(f"Could not find a time where altitude reaches {target_alt:.1f} m in the takeoff phase.")
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines + lines2, labels + labels2, loc="best")
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="best")
 
     plt.tight_layout()
     plt.show()
@@ -821,7 +839,7 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
 
 
 # -----------------------
-# Plot grid + paths with energy percentage coloring
+# Plot grid + paths with battery percentage colouring
 # -----------------------
 def plot_grid_and_paths(
     rows: int,
@@ -836,10 +854,13 @@ def plot_grid_and_paths(
     Grid plot:
       - blocked cells, warehouse, deliveries (labelled by demand)
       - each trip path drawn
-      - nodes colored by remaining motion energy (% of trip's initial motion energy)
+      - nodes colored by remaining battery (% of full pack)
     """
+    global BATTERY_CAPACITY_KWH_GLOBAL
+    capacity = BATTERY_CAPACITY_KWH_GLOBAL or 1.0
+
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.set_title("Drone paths on grid (colored by remaining energy %)")
+    ax.set_title("Drone paths on grid (colored by battery %)")
 
     # background grid
     for r in range(rows):
@@ -870,21 +891,34 @@ def plot_grid_and_paths(
 
     sc = None  # for colorbar
 
-    for i, (cells, energies_kwh) in enumerate(trip_infos):
-        if not cells:
+    for i, trip in enumerate(trip_infos):
+        if not trip:
             continue
-        xs = [c + 0.5 for (r, c) in cells]
-        ys = [r + 0.5 for (r, c) in cells]
-        color = colors[i % len(colors)]
 
-        initial = energies_kwh[0] if energies_kwh and energies_kwh[0] > 0 else 1.0
-        energies_pct = [max(0.0, 100.0 * E / initial) for E in energies_kwh]
+        cells, soc_kwh = trip
+
+        if not cells or not soc_kwh:
+            continue
+
+        if len(cells) != len(soc_kwh):
+            print(f"Warning: trip {i+1} has len(cells)={len(cells)} != len(soc)={len(soc_kwh)}; truncating.")
+            n = min(len(cells), len(soc_kwh))
+            cells = cells[:n]
+            soc_kwh = soc_kwh[:n]
+
+        xs = np.array([c + 0.5 for (r, c) in cells], dtype=float)
+        ys = np.array([r + 0.5 for (r, c) in cells], dtype=float)
+        soc_kwh = np.maximum(np.array(soc_kwh, dtype=float), 0.0)
+
+        soc_pct = np.clip(100.0 * soc_kwh / capacity, 0.0, 100.0)
+
+        color = colors[i % len(colors)]
 
         # path line
         ax.plot(xs, ys, "-", color=color, linewidth=1.5, alpha=0.5, label=f"Trip {i+1}")
 
-        # scatter colored by percentage
-        sc = ax.scatter(xs, ys, c=energies_pct, cmap="viridis", s=40, edgecolor="k", vmin=0.0, vmax=100.0)
+        # scatter colored by battery %
+        sc = ax.scatter(xs, ys, c=soc_pct, cmap="viridis", s=40, edgecolor="k", vmin=0.0, vmax=100.0)
 
         # arrows to show direction
         for (x0, y0, x1, y1) in zip(xs[:-1], ys[:-1], xs[1:], ys[1:]):
@@ -906,10 +940,68 @@ def plot_grid_and_paths(
     ax.grid(False)
     ax.legend(loc="upper right")
 
-    # colorbar for energy percentage
     if sc is not None:
         cbar = plt.colorbar(sc, ax=ax)
-        cbar.set_label("Remaining motion energy (%)")
+        cbar.set_label("Battery state of charge (%)")
+
+    plt.tight_layout()
+    plt.show()
+
+
+# -----------------------
+# Interpolated continuous trip path
+# -----------------------
+def plot_interpolated_trip_continuous(trip_info: Tuple[Path, List[float]], cruise_speed_kmh: float):
+    """
+    Take one trip's discrete grid cells and:
+      - infer time stamps from step distance and cruise speed
+      - build interp1d(x(t)), interp1d(y(t)) for continuous position
+      - plot map view + time view
+    """
+    cells, _ = trip_info
+    if len(cells) < 2:
+        print("Not enough points in trip to interpolate.")
+        return
+
+    v = cruise_speed_kmh / 3.6  # m/s
+    xs = np.array([c + 0.5 for (r, c) in cells], dtype=float)
+    ys = np.array([r + 0.5 for (r, c) in cells], dtype=float)
+
+    # Build time stamps based on distance (in meters) / speed
+    t_nodes = [0.0]
+    for (r1, c1), (r2, c2) in zip(cells[:-1], cells[1:]):
+        dist_km = step_cost((r1, c1), (r2, c2))
+        dist_m = dist_km * 1000.0
+        dt = dist_m / v
+        t_nodes.append(t_nodes[-1] + dt)
+    t_nodes = np.array(t_nodes)
+
+    fx = interp1d(t_nodes, xs, kind="linear")
+    fy = interp1d(t_nodes, ys, kind="linear")
+
+    t_dense = np.linspace(t_nodes[0], t_nodes[-1], 200)
+    x_dense = fx(t_dense)
+    y_dense = fy(t_dense)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+    ax0 = axes[0]
+    ax0.set_title("Trip path (discrete vs interpolated)")
+    ax0.plot(xs, ys, "o-", label="Grid cells")
+    ax0.plot(x_dense, y_dense, "--", label="Interpolated path")
+    ax0.set_aspect("equal", adjustable="box")
+    ax0.invert_yaxis()
+    ax0.set_xlabel("x (grid units)")
+    ax0.set_ylabel("y (grid units)")
+    ax0.legend()
+
+    ax1 = axes[1]
+    ax1.set_title("Continuous position vs time")
+    ax1.plot(t_dense, x_dense, label="x(t)")
+    ax1.plot(t_dense, y_dense, label="y(t)")
+    ax1.set_xlabel("Time (s)")
+    ax1.set_ylabel("Position (grid units)")
+    ax1.legend()
 
     plt.tight_layout()
     plt.show()
@@ -922,9 +1014,11 @@ if __name__ == "__main__":
     rows, cols = 10, 10
     num_deliveries = 7
     carry_capacity = 10       # kg
-    battery_capacity = 5.0    # kWh
+    battery_capacity = BATTERY_CAPACITY_FROM_CELLS_KWH  # kWh
     cruise_speed = 40.0       # km/h
     seed = None
+
+    BATTERY_CAPACITY_KWH_GLOBAL = battery_capacity
 
     blocked: Set[Coord] = set()
     random.seed(seed)
@@ -946,19 +1040,11 @@ if __name__ == "__main__":
 
     print_grid(rows, cols, warehouse, deliveries, demands, blocked)
 
-    # ODE-based vertical energy
     print_vertical_energy_table()
-
-    # ROOT FINDING: where induced & drag power are equal
     print_crossover_speeds()
-
-    # ODE + INTERPOLATION: takeoff profile
     plot_takeoff_profile()
-
-    # Range & endurance vs payload
     plot_range_and_endurance_vs_payload(battery_capacity, cruise_speed)
 
-    # Routing / energy-aware trips
     trip_infos = run_all_trips(
         rows=rows,
         cols=cols,
@@ -971,6 +1057,6 @@ if __name__ == "__main__":
         cruise_speed_kmh=cruise_speed
     )
 
-    # Grid visualization
     if trip_infos:
         plot_grid_and_paths(rows, cols, warehouse, deliveries, demands, blocked, trip_infos)
+        plot_interpolated_trip_continuous(trip_infos[0], cruise_speed)

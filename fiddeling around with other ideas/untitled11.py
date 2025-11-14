@@ -410,7 +410,7 @@ def run_all_trips(
         print("These deliveries are impossible (capacity or obstacles):", impossible)
 
     trip_idx = 0
-    grand_total_energy = 0.0
+    grand_total_energy = 0.0          # total energy over all trips (kWh)
     all_trip_infos: List[Tuple[Path, List[float]]] = []
 
     while remaining:
@@ -427,6 +427,9 @@ def run_all_trips(
         # Motion energy after takeoff (for coloring / tracking)
         energy = battery_capacity_kwh - takeoff_E
         grand_total_energy += takeoff_E
+
+        # NEW: track energy used on THIS trip
+        trip_energy_used = takeoff_E
 
         current = warehouse
         trip_cells: Path = [warehouse]
@@ -503,6 +506,7 @@ def run_all_trips(
                         'energy_kwh': back_e
                     })
                     grand_total_energy += back_e
+                    trip_energy_used += back_e
                     current = warehouse
 
                 break
@@ -537,6 +541,7 @@ def run_all_trips(
                 'energy_kwh': go_e
             })
             grand_total_energy += go_e
+            trip_energy_used += go_e
             current = target
 
             # Deliver payload
@@ -587,6 +592,7 @@ def run_all_trips(
                     'energy_kwh': back_e2
                 })
                 grand_total_energy += back_e2
+                trip_energy_used += back_e2
                 current = warehouse
                 break
 
@@ -594,6 +600,7 @@ def run_all_trips(
         landing_E_final = landing_energy_kwh_for(carried)
         trip_legs.append({'type': 'landing', 'energy_kwh': landing_E_final})
         grand_total_energy += landing_E_final
+        trip_energy_used += landing_E_final
         energy -= landing_E_final
 
         print(f"\n=== Trip {trip_idx} ===")
@@ -619,6 +626,11 @@ def run_all_trips(
                 )
             elif leg['type'] == 'landing':
                 print(f"  {i:02d}. LANDING energy_kwh={leg['energy_kwh']:.3f}")
+
+        # NEW: print per-trip battery usage as %
+        trip_pct = 100.0 * trip_energy_used / battery_capacity_kwh
+        print(f"Trip {trip_idx} energy use: {trip_energy_used:.3f} kWh "
+              f"({trip_pct:.1f}% of a {battery_capacity_kwh:.2f} kWh battery)")
 
         print(f"Trip {trip_idx} ended at: {current}")
         print("Remaining deliveries:", remaining if remaining else "None")
@@ -657,9 +669,12 @@ def run_all_trips(
                 break
 
     print("\n=== All trips complete (or as many as feasible) ===")
-    print(f"Grand total energy (kWh) including takeoff/landing: {grand_total_energy:.3f}")
+    total_pct = 100.0 * grand_total_energy / battery_capacity_kwh
+    print(f"Grand total energy (kWh) including takeoff/landing: {grand_total_energy:.3f} kWh "
+          f"({total_pct:.1f}% of a {battery_capacity_kwh:.2f} kWh battery)")
 
     return all_trip_infos
+
 
 
 # -----------------------
@@ -708,6 +723,7 @@ def plot_takeoff_profile():
     Also uses root finding on the interpolated altitude(t) to find
     the time when altitude = 15 m.
     """
+    global g 
     global M_TAKEOFF, VH_TAKEOFF
     M_TAKEOFF = m_tot
     VH_TAKEOFF = np.sqrt((M_TAKEOFF * g) / (2 * rho * A_disk))
@@ -849,17 +865,19 @@ def plot_grid_and_paths(
       - blocked cells, warehouse, deliveries (labelled by demand)
       - each trip path drawn
       - nodes colored by remaining motion energy (% of trip's initial motion energy)
+
+    trip_infos: list of (cells, energies_kwh) for each trip
     """
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.set_title("Drone paths on grid (colored by remaining energy %)")
 
-    # background grid
+    # --- background grid ---
     for r in range(rows):
         for c in range(cols):
             rect = Rectangle((c, r), 1, 1, fill=False, edgecolor="lightgrey", linewidth=0.5)
             ax.add_patch(rect)
 
-    # blocked
+    # blocked cells
     for (r, c) in blocked:
         rect = Rectangle((c, r), 1, 1, facecolor="black", alpha=0.3)
         ax.add_patch(rect)
@@ -880,23 +898,47 @@ def plot_grid_and_paths(
 
     colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", ["tab:blue", "tab:orange", "tab:green"])
 
-    sc = None  # for colorbar
+    sc = None  # scatter handle for colorbar
 
-    for i, (cells, energies_kwh) in enumerate(trip_infos):
+    for i, trip in enumerate(trip_infos):
+        if not trip:
+            continue
+
+        cells, energies_kwh = trip
+
+        # --- safety checks ---
         if not cells:
             continue
-        xs = [c + 0.5 for (r, c) in cells]
-        ys = [r + 0.5 for (r, c) in cells]
-        color = colors[i % len(colors)]
+        if not energies_kwh:
+            print(f"Warning: trip {i+1} has cells but no energy data; skipping colouring.")
+            continue
+        if len(cells) != len(energies_kwh):
+            print(f"Warning: trip {i+1} has len(cells)={len(cells)} != len(energies)={len(energies_kwh)}; "
+                  f"using min length.")
+            min_len = min(len(cells), len(energies_kwh))
+            cells = cells[:min_len]
+            energies_kwh = energies_kwh[:min_len]
 
-        initial = energies_kwh[0] if energies_kwh and energies_kwh[0] > 0 else 1.0
-        energies_pct = [max(0.0, 100.0 * E / initial) for E in energies_kwh]
+        # Convert to numpy arrays
+        xs = np.array([c + 0.5 for (r, c) in cells], dtype=float)
+        ys = np.array([r + 0.5 for (r, c) in cells], dtype=float)
+        energies_kwh = np.array(energies_kwh, dtype=float)
+
+        # Ensure non-negative energies, avoid division by zero
+        energies_kwh = np.maximum(energies_kwh, 0.0)
+        initial = energies_kwh[0] if energies_kwh[0] > 0 else 1.0
+
+        # Remaining motion energy as percentage of initial motion energy for that trip
+        energies_pct = np.clip(100.0 * energies_kwh / initial, 0.0, 100.0)
+
+        color = colors[i % len(colors)]
 
         # path line
         ax.plot(xs, ys, "-", color=color, linewidth=1.5, alpha=0.5, label=f"Trip {i+1}")
 
         # scatter colored by percentage
-        sc = ax.scatter(xs, ys, c=energies_pct, cmap="viridis", s=40, edgecolor="k", vmin=0.0, vmax=100.0)
+        sc = ax.scatter(xs, ys, c=energies_pct, cmap="viridis",
+                        s=40, edgecolor="k", vmin=0.0, vmax=100.0)
 
         # arrows to show direction
         for (x0, y0, x1, y1) in zip(xs[:-1], ys[:-1], xs[1:], ys[1:]):
@@ -922,9 +964,12 @@ def plot_grid_and_paths(
     if sc is not None:
         cbar = plt.colorbar(sc, ax=ax)
         cbar.set_label("Remaining motion energy (%)")
+    else:
+        print("Note: no trips were plotted, so no colourbar created.")
 
     plt.tight_layout()
     plt.show()
+
 
 
 # -----------------------
