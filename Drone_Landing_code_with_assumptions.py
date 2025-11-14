@@ -8,6 +8,26 @@ from scipy.integrate import solve_ivp
 # ----------------------------
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
+<<<<<<< HEAD
+C_dz = 0.9                 # Drag coefficient
+A_top = 0.175674            # Effective top area of drone (m^2)
+A_disk = 1.34           # total rotor disk area (m^2) ~ six 0.223 m2 rotors
+eta = 0.75              # overall efficiency (motor * prop)
+Vb = 132.2               # battery voltage (V)
+Cb = 27                # battery capacity (Ah)
+P_av = 12                # Avionics power (W)
+usable_frac = 0.9       # usable fraction of battery
+E_avail = usable_frac * Vb * Cb * 3600  # convert Wh → J
+
+m_frame = 5.93           # frame mass (kg)
+m_payload = 6            # payload mass (kg)
+m_battery = 3.57         # x6 battery mass (kg)
+m_tot = m_frame + m_payload + m_battery
+
+# Desired takeoff climb speed target
+v_l_target = -0.50          # m/s (steady decrease)
+      # m targ5et altitude (stop integration here)
+=======
 C_d = 1                 # Drag coefficient
 A_top = 0.25             # Effective top area of drone (m^2)
 A_disk = 0.25           # total rotor disk area (m^2) ~ four 0.14 m rotors
@@ -26,11 +46,37 @@ m_tot = m_frame + m_payload + m_battery  # total mass (kg)
 # Desired takeoff climb speed target
 v_target = -0.50          # m/s (steady climb)
       # m target altitude (stop integration here)
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 
 # ----------------------------
 # ODEs for takeoff phase
 # state vector y = [z, vz, E]
 # ----------------------------
+<<<<<<< HEAD
+def landing_dynamics(t, y):
+    z, vz, E = y
+
+    # --- Control law / thrust command ---
+    # Simple proportional controller on vertical speed:
+    k_p = 0.5                                        # if vz not euquak to v target increase acceleration by 5
+    
+    Thurst = max(0.0, m_tot * (g + k_p * (v_l_target - vz)))  # Thurst (N)
+   
+    Drag_z = 0.5*rho*C_dz*A_top*(vz)* abs(vz)           # vertical drag (N)
+    
+    # --- Power model ---
+    # Induced velocity (momentum theory)
+    vi = np.sqrt(Thurst / (2 * rho * A_disk))
+    P_ind = Thurst * vi                     # induced power (W)
+    P_elec = (P_ind / eta) + P_av           # electrical power 
+
+    # --- Dynamics ---
+    dzdt = vz
+    dvzdt = (Thurst - (m_tot * g) - Drag_z )/ m_tot
+    dEdt = -P_elec
+
+    return [dzdt, dvzdt, dEdt]
+=======
 def takeoff_dynamics(t, y):
     z, vz, E = y
 
@@ -63,6 +109,17 @@ t_span = (0, 60)                              # simulate up to 15 s (should reac
 t_eval = np.linspace(t_span[0], t_span[1], 300)
 
 sol = solve_ivp(takeoff_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
+
+# ----------------------------
+# Extract results
+# ----------------------------
+<<<<<<< HEAD
+y0 = [30.0, 0.0, E_avail]                      # initial altitude, vertical speed, energy
+t_span = (0, 120)                              # simulate up to 15 s (should reach ~10 m)
+t_eval = np.linspace(t_span[0], t_span[1], 300)
+
+sol = solve_ivp(landing_dynamics, t_span, y0, t_eval=t_eval, rtol=1e-6, atol=1e-8)
 
 # ----------------------------
 # Extract results
@@ -73,6 +130,14 @@ E = sol.y[2]
 t = sol.t
 P_loss = (E_avail - E) / 3600  # convert J to Wh
 
+=======
+z = sol.y[0]
+vz = sol.y[1]
+E = sol.y[2]
+t = sol.t
+P_loss = (E_avail - E) / 3600  # convert J to Wh
+
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 # Stop when target altitude reached
 idx = np.where(z <= 0)[0][0]
 z = z[:idx]
@@ -94,7 +159,11 @@ plt.legend()
 
 plt.subplot(3,1,2)
 plt.plot(t, vz, label='Vertical Speed')
+<<<<<<< HEAD
+plt.axhline(v_l_target, color='r', linestyle='--', label='Target speed')
+=======
 plt.axhline(v_target, color='r', linestyle='--', label='Target speed')
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 plt.ylabel('v_z (m/s)')
 plt.grid(True)
 plt.legend()

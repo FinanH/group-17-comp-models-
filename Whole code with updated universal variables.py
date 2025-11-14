@@ -425,6 +425,8 @@ def power_model(W, v, params):
 
 
 # ---------------------------------------
+<<<<<<< HEAD
+=======
 # Takeoff / landing energy (kWh)
 # ---------------------------------------
 def compute_takeoff_energy_kwh():
@@ -465,6 +467,7 @@ LANDING_KWH = TAKEOFF_KWH
 
 
 # ---------------------------------------
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 # Main simulation: energy vs distance
 # ---------------------------------------
 def simulate_energy_along_path(payload_drops, E0, speed, params):
@@ -676,6 +679,8 @@ def power_kw(load_kg: float, base_kw: float = 0.3, alpha_kw_per_kg: float = 0.02
     return base_kw + alpha_kw_per_kg * max(load_kg, 0.0) + quad_kw_per_kg2 * max(load_kg, 0.0)**2
 
 def move_energy_kwh(distance_km: float, load_kg: float, speed_kmh: float) -> float:
+<<<<<<< HEAD
+=======
     """
     Cruise energy using the physics-based power_model(W, v, params).
 
@@ -683,10 +688,14 @@ def move_energy_kwh(distance_km: float, load_kg: float, speed_kmh: float) -> flo
     load_kg     : payload mass carried on that leg
     speed_kmh   : cruise speed
     """
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
     if distance_km == float("inf"):
         return float("inf")
     if speed_kmh <= 0:
         raise ValueError("speed_kmh must be > 0")
+<<<<<<< HEAD
+    return power_kw(load_kg) * (distance_km / speed_kmh)
+=======
 
     v = speed_kmh / 3.6          # m/s
     distance_m = distance_km * 1000.0
@@ -698,6 +707,7 @@ def move_energy_kwh(distance_km: float, load_kg: float, speed_kmh: float) -> flo
     E_J = P * time_s
     return E_J / 3.6e6           # kWh
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 
 # -----------------------
 # Trip-by-trip planner
@@ -726,6 +736,13 @@ def run_all_trips(
         else:
             remaining.append(d)
 
+<<<<<<< HEAD
+    trip_idx = 0
+    grand_total_energy = 0.0
+    while remaining:
+        trip_idx += 1
+        energy = battery_capacity_kwh
+=======
     if impossible:
         print("These deliveries are impossible (capacity or obstacles):", impossible)
 
@@ -747,10 +764,16 @@ def run_all_trips(
         energy = battery_capacity_kwh - takeoff_E
         grand_total_energy += takeoff_E
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
         carried = min(carry_capacity, sum(demands[d] for d in remaining))
         current = warehouse
         trip_path: Path = [warehouse]
         trip_legs = []
+<<<<<<< HEAD
+        served_this_trip = []
+
+        while True:
+=======
 
         # Record takeoff as the first leg
         trip_legs.append({'type': 'takeoff', 'energy_kwh': takeoff_E})
@@ -766,6 +789,7 @@ def run_all_trips(
                 # No energy left for any more movement; end trip
                 break
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
             candidates = []
             for d in remaining:
                 dmd = demands[d]
@@ -774,6 +798,10 @@ def run_all_trips(
                 dist_to_km = dist_km[(current, d)]
                 if dist_to_km == float("inf"):
                     continue
+<<<<<<< HEAD
+                go_e = move_energy_kwh(dist_to_km, carried, cruise_speed_kmh)
+                new_load = carried - dmd
+=======
 
                 # Outbound leg with current carried load
                 go_e = move_energy_kwh(dist_to_km, carried, cruise_speed_kmh)
@@ -782,10 +810,27 @@ def run_all_trips(
                 new_load = carried - dmd
 
                 # Energy to go home from d with lighter load
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
                 dist_back_km = dist_km[(d, warehouse)]
                 if dist_back_km == float("inf"):
                     continue
                 back_e = move_energy_kwh(dist_back_km, max(new_load, 0.0), cruise_speed_kmh)
+<<<<<<< HEAD
+                need = go_e + back_e
+                if need <= energy:
+                    candidates.append((dist_to_km, d, go_e, back_e, new_load))
+            if not candidates:
+                if current != warehouse:
+                    dist_home_km = dist_km[(current, warehouse)]
+                    back_e = move_energy_kwh(dist_home_km, max(carried, 0.0), cruise_speed_kmh)
+                    if back_e > energy:
+                        break
+                    p = path[(current, warehouse)]
+                    trip_path += (p[1:] if p and p[0] == current else p)
+                    trip_legs.append({
+                        'type': 'move', 'from': current, 'to': warehouse,
+                        'distance_km': dist_home_km, 'load_before_kg': max(carried, 0.0), 'energy_kwh': back_e
+=======
 
                 # We only require enough for cruise; landing_E is reserved separately
                 need = go_e + back_e
@@ -813,10 +858,22 @@ def run_all_trips(
                         'distance_km': dist_home_km,
                         'load_before_kg': max(carried, 0.0),
                         'energy_kwh': back_e
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
                     })
                     energy -= back_e
                     grand_total_energy += back_e
                     current = warehouse
+<<<<<<< HEAD
+                break
+
+            candidates.sort(key=lambda x: x[0])
+            dist_to_km, target, go_e, back_e, new_load = candidates[0]
+            p = path[(current, target)]
+            trip_path += (p[1:] if p and p[0] == current else p)
+            trip_legs.append({
+                'type': 'move', 'from': current, 'to': target,
+                'distance_km': dist_to_km, 'load_before_kg': carried, 'energy_kwh': go_e
+=======
 
                 # end of this trip
                 break
@@ -836,11 +893,30 @@ def run_all_trips(
                 'distance_km': dist_to_km,
                 'load_before_kg': carried,
                 'energy_kwh': go_e
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
             })
             energy -= go_e
             grand_total_energy += go_e
             current = target
 
+<<<<<<< HEAD
+            dmd = demands[target]
+            carried -= dmd
+            served_this_trip.append((target, dmd))
+            trip_legs.append({'type': 'drop', 'at': target, 'demand': dmd, 'load_after': carried})
+            remaining.remove(target)
+
+            if carried == 0 and current != warehouse:
+                dist_home_km = dist_km[(current, warehouse)]
+                back_e2 = move_energy_kwh(dist_home_km, 0.0, cruise_speed_kmh)
+                if back_e2 > energy:
+                    break
+                p = path[(current, warehouse)]
+                trip_path += (p[1:] if p and p[0] == current else p)
+                trip_legs.append({
+                    'type': 'move', 'from': current, 'to': warehouse,
+                    'distance_km': dist_home_km, 'load_before_kg': 0.0, 'energy_kwh': back_e2
+=======
             # Deliver payload at target
             dmd = demands[target]
             carried -= dmd
@@ -873,22 +949,42 @@ def run_all_trips(
                     'distance_km': dist_home_km,
                     'load_before_kg': 0.0,
                     'energy_kwh': back_e2
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
                 })
                 energy -= back_e2
                 grand_total_energy += back_e2
                 current = warehouse
                 break
 
+<<<<<<< HEAD
+=======
         # End-of-trip landing
         trip_legs.append({'type': 'landing', 'energy_kwh': landing_E})
         grand_total_energy += landing_E
         energy -= landing_E
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
         print(f"\n=== Trip {trip_idx} ===")
         if served_this_trip:
             print("Delivered:", ", ".join(f"{pt} (x{dmd} kg)" for pt, dmd in served_this_trip))
         else:
             print("No deliveries completed on this trip.")
+<<<<<<< HEAD
+        print("Legs:")
+        for i, leg in enumerate(trip_legs, 1):
+            if leg['type'] == 'move':
+                print(f"  {i:02d}. MOVE {leg['from']} -> {leg['to']}  "
+                      f"dist_km={leg['distance_km']:.3f}  load_before_kg={leg['load_before_kg']}  "
+                      f"energy_kwh={leg['energy_kwh']:.3f}")
+            else:
+                print(f"  {i:02d}. DROP at {leg['at']}  demand_kg={leg['demand']}  load_after_kg={leg['load_after']}")
+        print(f"Trip {trip_idx} ended at: {current}")
+        print("Remaining deliveries:", remaining if remaining else "None")
+
+        if remaining:
+            can_start = False
+            start_load = min(carry_capacity, sum(demands[x] for x in remaining))
+=======
 
         print("Legs:")
         for i, leg in enumerate(trip_legs, 1):
@@ -921,6 +1017,7 @@ def run_all_trips(
                 0.0, battery_capacity_kwh - (TAKEOFF_KWH + LANDING_KWH)
             )
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
             for d in remaining:
                 dmd = demands[d]
                 if dmd > carry_capacity:
@@ -929,6 +1026,19 @@ def run_all_trips(
                 dist_back_km = dist_km[(d, warehouse)]
                 if dist_to_km == float("inf") or dist_back_km == float("inf"):
                     continue
+<<<<<<< HEAD
+                go_e = move_energy_kwh(dist_to_km, start_load, cruise_speed_kmh)
+                back_e = move_energy_kwh(dist_back_km, max(start_load - dmd, 0.0), cruise_speed_kmh)
+                if go_e + back_e <= battery_capacity_kwh:
+                    can_start = True
+                    break
+            if not can_start:
+                print("\nSome deliveries are impossible with current obstacles/capacity:", remaining)
+                break
+
+    print("\n=== All trips complete (or as many as feasible) ===")
+    print(f"Grand total movement energy (kWh): {grand_total_energy:.3f}")
+=======
 
                 go_e = move_energy_kwh(dist_to_km, start_load, cruise_speed_kmh)
                 back_e = move_energy_kwh(dist_back_km, max(start_load - dmd, 0.0), cruise_speed_kmh)
@@ -944,6 +1054,7 @@ def run_all_trips(
     print("\n=== All trips complete (or as many as feasible) ===")
     print(f"Grand total energy (kWh) including takeoff/landing: {grand_total_energy:.3f}")
 
+>>>>>>> 59e2c9104cddb354c1322830da7a087801ccb849
 
 # -----------------------
 # Pretty print grid
