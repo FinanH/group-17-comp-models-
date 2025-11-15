@@ -28,7 +28,7 @@ Coord = Tuple[int, int]
 Path = List[Coord]
 
 
-# 这里复制一份 step_cost 给连续轨迹插值用
+# step_cost 
 def step_cost(u: Coord, v: Coord) -> float:
     """
     Distance between two neighboring cells in KM.
@@ -56,7 +56,7 @@ def plot_takeoff_profile():
     This shows off the ODE + interpolation + root finding combo in one place.
     """
     global m_tot, rho, A_disk, E_avail
-    from ode import takeoff_dynamics  # 局部导入避免循环
+    from ode import takeoff_dynamics  
 
     g = 9.8
     M_TAKEOFF = m_tot
@@ -105,7 +105,7 @@ def plot_takeoff_profile():
     ax2.set_ylabel("Battery (kWh)")
 
     # Root-finding on altitude = 15 m (incremental search on interpolated curve)
-    target_alt = 15.0
+    target_alt = 30.0
 
     def gfun(tval):
         return float(f_alt(tval) - target_alt)

@@ -1,5 +1,8 @@
 # root_finding.py
 
+#IMPORTANR - it is notable this is not the only place i have used root finding i also
+# used root finding in the ode part of the code when taking off
+
 import math
 from typing import Optional
 
@@ -28,15 +31,22 @@ def incremental_bisection_root(f, a, b, step=0.5, tol=1e-3, max_iter=50):
     """
     x_left = a
     f_left = f(x_left)
+
+    # If we basically start on a root
+    if abs(f_left) < tol:
+        return x_left
+
     x = a + step
 
     while x <= b:
         f_right = f(x)
-        # Exact zero at left point
-        if f_left == 0.0:
-            return x_left
-        # Check for sign change
-        if f_left * f_right <= 0.0:
+
+        # If the right sample is basically on the root
+        if abs(f_right) < tol:
+            return x
+
+        # Check for actual sign change between left and right
+        if f_left * f_right < 0.0:
             # We have a bracket [x_left, x]; do bisection here
             lo, hi = x_left, x
             f_lo, f_hi = f_left, f_right
@@ -45,14 +55,19 @@ def incremental_bisection_root(f, a, b, step=0.5, tol=1e-3, max_iter=50):
                 f_mid = f(mid)
                 if abs(f_mid) < tol or abs(hi - lo) < tol:
                     return mid
-                if f_lo * f_mid <= 0.0:
+                if f_lo * f_mid < 0.0:
                     hi, f_hi = mid, f_mid
                 else:
                     lo, f_lo = mid, f_mid
-            # If we exit the loop, just return the midpoint we ended up with
             return 0.5 * (lo + hi)
+
         x_left, f_left = x, f_right
         x += step
+
+    # Final safety: check the right endpoint explicitly
+    f_b = f(b)
+    if abs(f_b) < tol:
+        return b
 
     # No sign change found
     return None
