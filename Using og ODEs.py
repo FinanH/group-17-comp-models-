@@ -61,7 +61,7 @@ v_l_target = -0.5
 
 vx_target = 18.0  
 
-x_target = 2000        # target horizontal distance (m)
+x_target = 0        # target horizontal distance (m)
 z_target = 0
 transition_time = 3    # tilt transition (s)
 
@@ -1276,48 +1276,11 @@ def compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh):
 
     return np.array(ranges_km), np.array(endurances_min)
 
-
-def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
-    """
-    Plot how range and endurance change as we increase payload.
-    We overlay an exponential fit for both.
-    """
-    payloads = np.linspace(0.0, 10.0, 11)
-    ranges_km, endurances_min = compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh)
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-
-    # Range vs payload + exponential fit
-    ax0 = axes[0]
-    ax0.plot(payloads, ranges_km, "o", label="Range data")
-    f_range, a_r, b_r = exponential_fit(payloads, ranges_km)
-    x_fit = np.linspace(payloads[0], payloads[-1], 200)
-    y_fit = f_range(x_fit)
-    ax0.plot(x_fit, y_fit, "-", label="Exponential fit")
-    ax0.set_title("Max range vs payload")
-    ax0.set_xlabel("Payload (kg)")
-    ax0.set_ylabel("Max range (km)")
-    ax0.legend()
-
-    # Endurance vs payload + exponential fit
-    ax1 = axes[1]
-    ax1.plot(payloads, endurances_min, "o", label="Endurance data")
-    f_end, a_e, b_e = exponential_fit(payloads, endurances_min)
-    y_fit_e = f_end(x_fit)
-    ax1.plot(x_fit, y_fit_e, "-", label="Exponential fit")
-    ax1.set_title("Battery endurance vs payload")
-    ax1.set_xlabel("Payload (kg)")
-    ax1.set_ylabel("Endurance (min)")
-    ax1.legend()
-
-    plt.tight_layout()
-    plt.show()
-
 def plot_payload_vs_total_delivered(
     trip_distance_km: float,
     cruise_speed_kmh: float,
     battery_capacity_kwh: float = BATTERY_CAPACITY_FROM_CELLS_KWH,
-    structural_limit_kg: float = 30.0,   # <- big default, change as needed
+    structural_limit_kg: float = 6,   # <- big default, change as needed
     num_points: int = 61
 ):
     """
@@ -1608,9 +1571,6 @@ if __name__ == "__main__":
 
     # Takeoff ODE + interpolation + root finding on altitude(t)
     plot_takeoff_profile()
-
-    # Range & endurance vs payload, using pack capacity (with exponential fits)
-    plot_range_and_endurance_vs_payload(battery_capacity, cruise_speed)
 
     # Routing / energy-aware trips with per-trip recharge
     trip_infos = run_all_trips(
