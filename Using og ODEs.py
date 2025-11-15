@@ -7,16 +7,13 @@
 # - Cruise uses an induced + drag + fixed power model.
 # - The drone does multiple trips from a warehouse, recharging fully each time.
 # - We track energy usage and battery state along each path.
-#LANDING_KWH_BASE
-
+#
 # On top of that, there are some numerical analysis “showpieces”:
 # - ODE solving with solve_ivp for vertical motion.
 # - Custom incremental-search + bisection root finding (no fancy library solvers).
 # - A home-made 1D interpolation function instead of using interp1d.
 # - Custom linear and exponential regression (fitting) without sklearn/polyfit.
 #
-# The idea is: this looks and feels like a student project where someone
-# actually thought about the maths and then implemented it in Python.
 
 
 import random
@@ -35,8 +32,8 @@ from matplotlib.patches import Rectangle, FancyArrowPatch
 # ----------------------------
 # Here we define one specific battery pack and keep everything consistent with it.
 
-Vb = 22.2              # battery voltage (V)
-Cb = 27                  # Battery capacity (Ah)
+Vb = 133                # battery voltage (V)
+Cb = 27                 # Battery capacity (Ah)
 usable_frac = 0.9       # We don't want to drain it 100% in real life
 
 # Usable energy from the pack:
@@ -337,14 +334,6 @@ def takeoff_dynamics(t, y):
 
     return [dzdt, dvzdt, dEdt]
 
-def takeoff_energy_kwh_for(payload_kg: float) -> float:
-    """
-    Takeoff energy for a given payload.
-    We linearly scale the baseline takeoff energy by total mass ratio.
-    """
-    total_mass = m_frame + m_battery + payload_kg
-    return TAKEOFF_KWH_BASE * (total_mass / m_tot)
-
 
 def landing_dynamics(t, y):
     z, vz, E = y
@@ -450,6 +439,7 @@ def landing_energy_kwh_for(payload_kg: float) -> float:
     """
     total_mass = m_frame + m_battery + payload_kg
     return LANDING_KWH_BASE * (total_mass / m_tot)
+
 
 def takeoff_energy_kwh_for(payload_kg: float) -> float:
     """
@@ -692,7 +682,7 @@ def step_cost(u: Coord, v: Coord) -> float:
     Cardinal step = 0.1 km (100 m)
     Diagonal step = 0.1 * sqrt(2) km
     """
-    base = 0.1  # km per cardinal step
+    base = 1  # km per cardinal step
     dr = v[0] - u[0]
     dc = v[1] - u[1]
     if dr != 0 and dc != 0:
@@ -1169,7 +1159,8 @@ def plot_takeoff_profile():
 
     This shows off the ODE + interpolation + root finding combo in one place.
     """
-    global M_TAKEOFF, VH_TAKEOFF, g
+    global M_TAKEOFF, VH_TAKEOFF
+    g = 9.8
     M_TAKEOFF = m_tot
     VH_TAKEOFF = np.sqrt((M_TAKEOFF * g) / (2 * rho * A_disk))
 
@@ -1321,6 +1312,50 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
 
     plt.tight_layout()
     plt.show()
+
+def plot_payload_vs_total_delivered(
+    trip_distance_km: float,
+    cruise_speed_kmh: float,
+    battery_capacity_kwh: float = BATTERY_CAPACITY_FROM_CELLS_KWH,
+    structural_limit_kg: float = 30.0,   # <- big default, change as needed
+    num_points: int = 61
+):
+    """
+    Payload vs total delivered mass (multiple identical trips per battery).
+    Goes up to the structural payload limit instead of stopping at 10 kg.
+    """
+
+    payloads = np.linspace(0.0, structural_limit_kg, num_points)
+    total_delivered = []
+
+    for W in payloads:
+        if W <= 0:
+            total_delivered.append(0.0)
+            continue
+
+        # Energy per trip
+        E_takeoff = takeoff_energy_kwh_for(W)
+        E_cruise = move_energy_kwh(trip_distance_km, W, cruise_speed_kmh)
+        E_landing = landing_energy_kwh_for(W)
+
+        E_trip = E_takeoff + E_cruise + E_landing
+
+        if E_trip >= battery_capacity_kwh:
+            total_delivered.append(0.0)
+            continue
+
+        n_trips = int(battery_capacity_kwh // E_trip)
+        total_delivered.append(n_trips * W)
+
+    plt.figure()
+    plt.plot(payloads, total_delivered, marker="o")
+    plt.xlabel("Payload per trip (kg)")
+    plt.ylabel("Total delivered per battery (kg)")
+    plt.title(f"Total delivered vs payload ({trip_distance_km:.1f} km trips)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
 
 
 # -----------------------
@@ -1513,6 +1548,19 @@ if __name__ == "__main__":
     # Use the actual pack we defined at the top
     battery_capacity = BATTERY_CAPACITY_FROM_CELLS_KWH  # ≈ 0.0799 kWh
     cruise_speed = 40.0       # km/h
+    
+    # -----------------------
+    # Payload vs total delivered mass plot
+    # -----------------------
+    # Example: 2 km one-way trip distance
+    trip_distance_km = 2.0
+    
+    plot_payload_vs_total_delivered(
+        trip_distance_km=trip_distance_km,
+        cruise_speed_kmh=cruise_speed,
+        battery_capacity_kwh=battery_capacity,  # use your drone's payload capacity
+        num_points=21
+    )
 
     # Set a seed if you want reproducible randomness, or None for different each run
     seed = None
