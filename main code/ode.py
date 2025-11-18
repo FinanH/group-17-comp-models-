@@ -11,7 +11,7 @@ from scipy.integrate import solve_ivp
 # ----------------------------
 # Here we define one specific battery pack and keep everything consistent with it.
 
-Vb = 50                # battery voltage (V)
+Vb = 55                # battery voltage (V)
 Cb = 27                 # Battery capacity (Ah)
 usable_frac = 0.9       # We don't want to drain it 100% in real life
 

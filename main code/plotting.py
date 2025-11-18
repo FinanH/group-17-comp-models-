@@ -148,30 +148,42 @@ def compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh):
     For each payload, compute:
       - maximum cruise range (km),
       - endurance in minutes,
-    after we pay for takeoff + landing.
+    after paying for takeoff + landing, using the ODE-based energy model.
     """
-    v = speed_kmh / 3.6
     ranges_km = []
     endurances_min = []
 
     for W in payloads:
+        # 1) Pay for takeoff and landing using the ODE helpers
         takeoffE = takeoff_energy_kwh_for(W)
-        landingE = landing_energy_kwh_for(0.0)   # assume we land empty
+        # you can change this to landing_energy_kwh_for(W) if your landing is loaded
+        landingE = landing_energy_kwh_for(0.0)
+
         avail_kwh = battery_capacity_kwh - takeoffE - landingE
 
-        if avail_kwh <= 0:
+        if avail_kwh <= 0.0:
             ranges_km.append(0.0)
             endurances_min.append(0.0)
             continue
 
-        P_W = power_model(W, v, params)
-        P_kW = P_W / 1000.0
+        # 2) ODE-based cruise energy per km at this payload & speed
+        #    move_energy_kwh is assumed roughly linear in distance,
+        #    so 1 km is fine for "energy per km".
+        e_per_km = move_energy_kwh(1.0, W, speed_kmh)  # kWh per km
 
-        endurance_h = avail_kwh / P_kW
-        endurance_min = endurance_h * 60.0
-        range_km = speed_kmh * endurance_h
+        if e_per_km <= 0.0:
+            ranges_km.append(0.0)
+            endurances_min.append(0.0)
+            continue
 
+        # 3) Max range (km) = usable energy / energy per km
+        range_km = avail_kwh / e_per_km
         ranges_km.append(range_km)
+
+        # 4) Endurance = time to fly that range at cruise speed
+        #    speed_kmh is in km/h -> time in hours, then convert to minutes.
+        time_h = range_km / speed_kmh
+        endurance_min = time_h * 60.0
         endurances_min.append(endurance_min)
 
     return np.array(ranges_km), np.array(endurances_min)
@@ -182,7 +194,7 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     Plot how range and endurance change as we increase payload.
     We overlay an exponential fit for both.
     """
-    payloads = np.linspace(0.0, 6.0, 11)
+    payloads = np.linspace(0, 6.0, 13)
     ranges_km, endurances_min = compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh)
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
