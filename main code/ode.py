@@ -11,7 +11,7 @@ from scipy.integrate import solve_ivp
 # ----------------------------
 # Here we define one specific battery pack and keep everything consistent with it.
 
-Vb = 133                # battery voltage (V)
+Vb = 50                # battery voltage (V)
 Cb = 27                 # Battery capacity (Ah)
 usable_frac = 0.9       # We don't want to drain it 100% in real life
 
@@ -27,7 +27,7 @@ BATTERY_CAPACITY_FROM_CELLS_KWH = usable_frac * Vb * Cb / 1000.0  # kWh ≈ 0.07
 
 m_frame = 5.93
 m_payload_nom = 6
-m_battery = 9.5
+m_battery = 3.57
 m_tot = m_frame + m_payload_nom + m_battery
 
 
