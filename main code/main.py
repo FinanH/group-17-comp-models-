@@ -19,8 +19,7 @@ from ode import (
 from root_finding import print_crossover_speeds
 from plotting import (
     plot_takeoff_profile,
-    plot_range_and_endurance_vs_payload,
-    plot_payload_vs_total_delivered,
+    plot_range_and_endurance_vs_payload,    
     plot_grid_and_paths,
     plot_interpolated_trip_continuous,
     Coord,
@@ -153,7 +152,7 @@ def run_all_trips(
     deliveries: List[Coord],
     demands: Dict[Coord, int],
     blocked: Set[Coord],
-    carry_capacity: int = 10,
+    carry_capacity: int = 6, 
     battery_capacity_kwh: float = 0.08,
     cruise_speed_kmh: float = 40.0
 ) -> List[Tuple[Path, List[float]]]:
@@ -469,19 +468,6 @@ if __name__ == "__main__":
     battery_capacity = BATTERY_CAPACITY_FROM_CELLS_KWH  # ≈ 0.0799 kWh
     cruise_speed = 40.0       # km/h
     
-    # -----------------------
-    # Payload vs total delivered mass plot
-    # -----------------------
-    # Example: 2 km one-way trip distance
-    trip_distance_km = 2.0
-    """
-    plot_payload_vs_total_delivered(
-        trip_distance_km=trip_distance_km,
-        cruise_speed_kmh=cruise_speed,
-        battery_capacity_kwh=battery_capacity,  # use your drone's payload capacity
-        num_points=21
-    )
-    """
 
     # Set a seed if you want reproducible randomness, or None for different each run
     seed = None

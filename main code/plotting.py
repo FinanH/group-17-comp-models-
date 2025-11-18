@@ -240,53 +240,6 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     plt.tight_layout()
     plt.show()
 
-
-
-
-def plot_payload_vs_total_delivered(
-    trip_distance_km: float,
-    cruise_speed_kmh: float,
-    battery_capacity_kwh: float = ode.BATTERY_CAPACITY_FROM_CELLS_KWH,
-    structural_limit_kg: float = 30.0,   # <- big default, change as needed
-    num_points: int = 61
-):
-    """
-    Payload vs total delivered mass (multiple identical trips per battery).
-    Goes up to the structural payload limit instead of stopping at 10 kg.
-    """
-
-    payloads = np.linspace(0.0, structural_limit_kg, num_points)
-    total_delivered = []
-
-    for W in payloads:
-        if W <= 0:
-            total_delivered.append(0.0)
-            continue
-
-        # Energy per trip
-        E_takeoff = takeoff_energy_kwh_for(W)
-        E_cruise = move_energy_kwh(trip_distance_km, W, cruise_speed_kmh)
-        E_landing = landing_energy_kwh_for(W)
-
-        E_trip = E_takeoff + E_cruise + E_landing
-
-        if E_trip >= battery_capacity_kwh:
-            total_delivered.append(0.0)
-            continue
-
-        n_trips = int(battery_capacity_kwh // E_trip)
-        total_delivered.append(n_trips * W)
-
-    plt.figure()
-    plt.plot(payloads, total_delivered, marker="o")
-    plt.xlabel("Payload per trip (kg)")
-    plt.ylabel("Total delivered per battery (kg)")
-    plt.title(f"Total delivered vs payload ({trip_distance_km:.1f} km trips)")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-
 # -----------------------
 # Plot grid + paths with battery percentage colouring
 # -----------------------
