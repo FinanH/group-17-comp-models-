@@ -182,7 +182,7 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     Plot how range and endurance change as we increase payload.
     We overlay an exponential fit for both.
     """
-    payloads = np.linspace(0.0, 10.0, 11)
+    payloads = np.linspace(0.0, 6.0, 11)
     ranges_km, endurances_min = compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh)
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
