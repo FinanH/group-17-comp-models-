@@ -463,7 +463,7 @@ def print_grid(rows: int, cols: int, warehouse: Coord, deliveries: List[Coord],
 if __name__ == "__main__":
     rows, cols = 10, 10
     num_deliveries = 7
-    carry_capacity = 10       # kg (total payload capacity)
+    carry_capacity = 6       # kg (total payload capacity)
 
     # Use the actual pack we defined at the top
     battery_capacity = BATTERY_CAPACITY_FROM_CELLS_KWH  # ≈ 0.0799 kWh
@@ -474,13 +474,14 @@ if __name__ == "__main__":
     # -----------------------
     # Example: 2 km one-way trip distance
     trip_distance_km = 2.0
-    
+    """
     plot_payload_vs_total_delivered(
         trip_distance_km=trip_distance_km,
         cruise_speed_kmh=cruise_speed,
         battery_capacity_kwh=battery_capacity,  # use your drone's payload capacity
         num_points=21
     )
+    """
 
     # Set a seed if you want reproducible randomness, or None for different each run
     seed = None
