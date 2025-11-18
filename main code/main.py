@@ -1,4 +1,5 @@
 # main.py
+# these are all the import that any file uses in the code not just the main
 
 import random
 import math
