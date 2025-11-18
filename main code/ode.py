@@ -308,8 +308,8 @@ def braking_distance_ivp(v0, theta_b):
         v, x = y
         Drag_x = 0.5 * rho * C_dx * A_front * max(v, 0)**2
         F_thrust_x = -m_tot * g * np.sin((abs(theta_b)))  # opposite to +x
-        a = (F_thrust_x - Drag_x) / m_tot
-        return [a, v]
+        dvxdt = (F_thrust_x - Drag_x) / m_tot
+        return [dvxdt, v]
 
     # Stop when v = 0 (root-finding event)
     def stop_v0(t, y):
