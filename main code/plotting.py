@@ -192,38 +192,55 @@ def compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh):
 def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     """
     Plot how range and endurance change as we increase payload.
-    We overlay an exponential fit for both.
+    Use our custom linear interpolation (linear_interp1d) to get
+    smooth curves from the discrete samples.
     """
-    payloads = np.linspace(0, 6.0, 13)
-    ranges_km, endurances_min = compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh)
+    # 1) Sample payloads at several points (must be >1 point or we can't interpolate)
+    payloads = np.linspace(0.0, 6.0, 13)   # 0, 0.5, ..., 6 kg
 
+    # 2) Compute discrete range/endurance values using the ODE-based helpers
+    ranges_km, endurances_min = compute_range_and_endurance(
+        payloads, battery_capacity_kwh, speed_kmh
+    )
+
+    # 3) Build interpolating functions using interpolation.linear_interp1d
+    f_range = linear_interp1d(payloads, ranges_km)
+    f_end   = linear_interp1d(payloads, endurances_min)
+
+    # 4) Dense payload axis for smooth plots
+    payloads_dense = np.linspace(payloads[0], payloads[-1], 200)
+    ranges_dense   = f_range(payloads_dense)
+    end_dense      = f_end(payloads_dense)
+
+    # 5) Plot
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    # Range vs payload + exponential fit
+    # --- Range vs payload ---
     ax0 = axes[0]
-    ax0.plot(payloads, ranges_km, "o", label="Range data")
-    f_range, a_r, b_r = exponential_fit(payloads, ranges_km)
-    x_fit = np.linspace(payloads[0], payloads[-1], 200)
-    y_fit = f_range(x_fit)
-    ax0.plot(x_fit, y_fit, "-", label="Exponential fit")
     ax0.set_title("Max range vs payload")
+    # interpolated smooth curve
+    ax0.plot(payloads_dense, ranges_dense, label="Interpolated range")
+    # original discrete points for reference
+    ax0.plot(payloads, ranges_km, "o", label="Sample points")
     ax0.set_xlabel("Payload (kg)")
     ax0.set_ylabel("Max range (km)")
+    ax0.grid(True)
     ax0.legend()
 
-    # Endurance vs payload + exponential fit
+    # --- Endurance vs payload ---
     ax1 = axes[1]
-    ax1.plot(payloads, endurances_min, "o", label="Endurance data")
-    f_end, a_e, b_e = exponential_fit(payloads, endurances_min)
-    y_fit_e = f_end(x_fit)
-    ax1.plot(x_fit, y_fit_e, "-", label="Exponential fit")
     ax1.set_title("Battery endurance vs payload")
+    ax1.plot(payloads_dense, end_dense, label="Interpolated endurance")
+    ax1.plot(payloads, endurances_min, "o", label="Sample points")
     ax1.set_xlabel("Payload (kg)")
     ax1.set_ylabel("Endurance (min)")
+    ax1.grid(True)
     ax1.legend()
 
     plt.tight_layout()
     plt.show()
+
+
 
 
 def plot_payload_vs_total_delivered(
