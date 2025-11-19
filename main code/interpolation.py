@@ -2,12 +2,11 @@
 
 import numpy as np
 
-# ----------------------------
+
 # Utility: custom interpolation
-# ----------------------------
-# Instead of using scipy.interpolate.interp1d, we roll our own.
-# It’s basic piecewise linear interpolation, but it does the job and
-# is easy to understand by inspection.
+
+# Instead of using scipy. we made this
+# It’s basic piecewise linear interpolation, but it does the job 
 
 def linear_interp1d(x_data, y_data):
     """

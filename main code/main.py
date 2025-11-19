@@ -1,8 +1,9 @@
 # main.py
 # these are all the import that any file uses in the code not just the main
-
+# any that arnt in the file need to be pip installed
 import random
 import heapq
+import math
 from typing import Tuple, List, Dict, Optional, Set
 
 import numpy as np
@@ -27,9 +28,8 @@ from plotting import (
 )
 
 
-# -----------------------
+
 # Grid / routing helpers
-# -----------------------
 # We model the city as a simple 10x10 grid. Each cell can be:
 #   - warehouse
 #   - delivery location
@@ -38,9 +38,6 @@ from plotting import (
 #
 # The drone moves in 8 directions (including diagonals). Each step has a distance.
 # Distance represented by one grid cell
-
-# Distance represented by one grid cell
-KM_PER_GRID = 1.0   # change this to whatever you want (0.1, 0.25, 0.5 etc.)
 
 
 
@@ -143,10 +140,9 @@ def precompute_pairs(rows: int, cols: int, points: List[Coord], blocked: Set[Coo
     return dist_km, path_map
 
 
-# -----------------------
 # Trip-by-trip planner (per-trip battery, returns paths + SOC per step)
-# -----------------------
-# This is where we actually "fly". The drone does several trips until all
+
+# This is where we actually fly. The drone does several trips until all
 # deliveries are serviced. After each trip it magically recharges to full.
 
 def run_all_trips(
@@ -177,7 +173,8 @@ def run_all_trips(
             # Impossible: demand exceeds total capacity of drone
             impossible.append(d)
         elif dist_km[(warehouse, d)] == float("inf") or dist_km[(d, warehouse)] == float("inf"):
-            # Also impossible: blocked by no-fly cells
+            # Also impossible: blocked by no-fly cells - this shouldnt be possible for our code
+            # but if you add more no fly zones then it is needed
             impossible.append(d)
         else:
             remaining.append(d)
@@ -219,7 +216,7 @@ def run_all_trips(
         trip_legs = []
         served_this_trip = []
 
-        # ----- inner routing loop: pick deliveries one by one -----
+        # inner routing loop: pick deliveries one by one
         while True:
             # We must always leave enough energy to land safely at the end
             landing_E_needed = landing_energy_kwh_for(carried)
@@ -281,7 +278,7 @@ def run_all_trips(
                             total_energy_used += dE_cell
                             trip_cells.append(cell)
                             trip_soc_list.append(battery_soc)
-
+                    # adding all the calcualed data to a array to be used later
                     trip_legs.append({
                         'type': 'move',
                         'from': current,
@@ -298,7 +295,7 @@ def run_all_trips(
             candidates.sort(key=lambda x: x[0])
             dist_to_km, target, go_e, back_e, new_load = candidates[0]
 
-            # Move from current -> target
+            # Move from current to target
             p = path[(current, target)]
             full_segment = p[1:] if p and p[0] == current else p
 
@@ -317,7 +314,7 @@ def run_all_trips(
                     total_energy_used += dE_cell
                     trip_cells.append(cell)
                     trip_soc_list.append(battery_soc)
-
+            # adding all the calcualed data to a array to be used later
             trip_legs.append({
                 'type': 'move',
                 'from': current,
@@ -433,9 +430,7 @@ def run_all_trips(
     return all_trip_infos
 
 
-# -----------------------
-# Pretty print grid
-# -----------------------
+# printing the grid in the termonal for bug checking
 
 def print_grid(rows: int, cols: int, warehouse: Coord, deliveries: List[Coord],
                demands: Dict[Coord, int], blocked: Set[Coord]):
@@ -459,13 +454,12 @@ def print_grid(rows: int, cols: int, warehouse: Coord, deliveries: List[Coord],
     print("\nLegend: W=warehouse | 1–3=delivery demand (kg) | X=no-fly | .=empty\n")
 
 
-# -----------------------
-# Demo / run
-# -----------------------
+
+# running the code in the main section
 
 if __name__ == "__main__":
-    rows, cols = 10, 10
-    num_deliveries = 7
+    rows, cols = 10, 10      # determoning the number of cells in the grid
+    num_deliveries = 7       #  number of delivaries
     carry_capacity = 6       # kg (total payload capacity)
 
     # Use the actual pack we defined at the top
@@ -480,10 +474,10 @@ if __name__ == "__main__":
   
     ode.BATTERY_CAPACITY_KWH_GLOBAL = battery_capacity
 
-    # --- random warehouse location ---
+    #  random warehouse location 
     warehouse: Coord = (random.randint(0, rows - 1), random.randint(0, cols - 1))
 
-    # --- 2 random no-fly squares (blocked), not overlapping warehouse ---
+    #  2 random no-fly squares (blocked), not overlapping warehouse 
     blocked: Set[Coord] = set()
     while len(blocked) < 2:
         r = random.randint(0, rows - 1)
@@ -493,7 +487,7 @@ if __name__ == "__main__":
             continue
         blocked.add(cell)
 
-    # --- random deliveries, avoiding warehouse and blocked cells ---
+    #  random deliveries, avoiding warehouse and blocked cells 
     deliveries: List[Coord] = []
     demands: Dict[Coord, int] = {}
     while len(deliveries) < num_deliveries:

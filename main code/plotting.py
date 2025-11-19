@@ -35,7 +35,7 @@ def step_cost(u: Coord, v: Coord) -> float:
     Cardinal step = 0.1 km (100 m)
     Diagonal step = 0.1 * sqrt(2) km
     """
-    base = 1  # km per cardinal step
+    base = 1  # km per cardinal step (this can be changed to add more accuracy)
     dr = v[0] - u[0]
     dc = v[1] - u[1]
     if dr != 0 and dc != 0:
@@ -43,9 +43,7 @@ def step_cost(u: Coord, v: Coord) -> float:
     return base
 
 
-# -----------------------
 # Plot: takeoff profile (with interpolation + root finding on altitude)
-# -----------------------
 
 def plot_takeoff_profile():
     """
@@ -87,13 +85,14 @@ def plot_takeoff_profile():
     z = sol.y[0]
     E = sol.y[2] / 3.6e6  # J -> kWh
 
-    # home-made interpolation
+    # interpolation before plotting
     f_alt = linear_interp1d(t, z)
     f_E = linear_interp1d(t, E)
     t_dense = np.linspace(t[0], t[-1], 300)
     z_dense = f_alt(t_dense)
     E_dense = f_E(t_dense)
-
+    
+    #plotting the vlaues
     fig, ax1 = plt.subplots()
     ax1.set_title("Takeoff profile (baseline mass, interpolated)")
     ax1.plot(t_dense, z_dense, label="Altitude (m)")
@@ -139,9 +138,8 @@ def plot_takeoff_profile():
     plt.show()
 
 
-# -----------------------
+
 # Range & endurance vs payload (with exponential fit)
-# -----------------------
 
 def compute_range_and_endurance(payloads, battery_capacity_kwh, speed_kmh):
     """
@@ -215,7 +213,7 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     # 5) Plot
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    # --- Range vs payload ---
+    # Range vs payload 
     ax0 = axes[0]
     ax0.set_title("Max range vs payload")
     # interpolated smooth curve
@@ -227,7 +225,7 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     ax0.grid(True)
     ax0.legend()
 
-    # --- Endurance vs payload ---
+    # Endurance vs payload
     ax1 = axes[1]
     ax1.set_title("Battery endurance vs payload")
     ax1.plot(payloads_dense, end_dense, label="Interpolated endurance")
@@ -240,9 +238,8 @@ def plot_range_and_endurance_vs_payload(battery_capacity_kwh, speed_kmh):
     plt.tight_layout()
     plt.show()
 
-# -----------------------
+
 # Plot grid + paths with battery percentage colouring
-# -----------------------
 
 def plot_grid_and_paths(
     rows: int,
@@ -352,11 +349,10 @@ def plot_grid_and_paths(
     plt.show()
 
 
-# -----------------------
 # Interpolated continuous trip path
-# -----------------------
+
 # This is just for visual flair: we take the discrete grid path and “replay”
-# it with time stamps, then interpolate x(t) and y(t) with our own interpolator.
+# it with time stamps, then interpolate x(t) and y(t) with our own interpolator. 
 
 def plot_interpolated_trip_continuous(trip_info: Tuple[Path, List[float]], cruise_speed_kmh: float):
     """

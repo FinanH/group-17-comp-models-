@@ -1,14 +1,13 @@
 # ode.py
 
-import math
 from typing import Optional
 
 import numpy as np
 from scipy.integrate import solve_ivp
 
-# ----------------------------
+
 # Physical constants & battery
-# ----------------------------
+
 # Here we define one specific battery pack and keep everything consistent with it.
 
 Vb = 55                # battery voltage (V)
@@ -31,14 +30,14 @@ m_battery = 3.57
 m_tot = m_frame + m_payload_nom + m_battery
 
 
-# Vertical target height (we assume every mission climbs to this, then cruises)
-alt_target = 30.0       #
+# Vertical target height/distances and velocaties
+alt_target = 30.0       # target altatude
 
-v_t_target = 2
+v_t_target = 2          # target velocaty take of target 
 
-v_l_target = -0.5
+v_l_target = -0.5       # velocaty landing traget 
 
-vx_target = 18.0  
+vx_target = 11.0        # target cruse velocity
 
 x_target = 2000        # target horizontal distance (m)
 z_target = 0
@@ -49,12 +48,9 @@ theta_cruise = np.deg2rad(25)  # cruising tilt
 theta_brake = np.deg2rad(-20)  # braking tilt (negative)
 theta_level = np.deg2rad(0)    # level
 
-# ----------------------------
-# Drone + environment parameters
-# ----------------------------
-# These are “generic multirotor-ish” values, not tied to a real product.
 
-            # avionics + misc power (W), always on
+# Drone + environment parameters
+
 
 g = 9.81                # gravity (m/s^2)
 rho = 1.225             # air density (kg/m^3)
@@ -64,7 +60,7 @@ A_front = 1.154         # Effective front area of drone (m^2)
 A_top = 0.175674        # Effective top area of drone (m^2)
 A_disk = 1.34           # total rotor disk area (m^2)
 eta = 0.75              # overall efficiency (motor * prop)
-P_av = 12               # avionics power (W)
+P_av = 12               # avionics power (W), always on
 
 vh = np.sqrt((m_tot * g) / (2 * rho * A_disk))  # hover induced velocity (m/s)
 
@@ -107,31 +103,28 @@ M_LANDING = m_tot
 VH_LANDING = vh
 
 
-# ---------------------------------
 # Takeoff / landing dynamics (ODE)
-# ---------------------------------
-# These ODEs are deliberately simple – they’re not meant to match a real autopilot,
-# but they do capture “energy is power integrated over time while moving vertically”.
+
 
 def takeoff_dynamics(t, y):
     z, vz, E = y
 
-    # --- Control law / thrust command ---
+    #  Control law / thrust command 
     # Simple proportional controller on vertical speed:
     k_p = 6.0         # if vz not euqual to v target increase acceleration by 5
                             
     Thurst = m_tot * (g + k_p * (v_t_target - vz))  # Thurst (N)
     Drag_z = 0.5*rho*C_dz*A_top*vz* abs(vz)        # vertical drag (N)
    
-    # --- Power model ---
+    #  Power model 
    
-    # Induced velocity (momentum theory)
+    # Induced velocity 
     vi = np.sqrt(Thurst / (2 * rho * A_disk))
   
     P_ind = Thurst * vi                      # induced power (W)
     P_elec = (P_ind / eta) + P_av            # electrical power 
 
-    # --- Dynamics ---
+    #  Dynamics 
     dzdt = vz
     dvzdt = (Thurst - (m_tot * g) - Drag_z )/ m_tot
     dEdt = -P_elec
@@ -142,21 +135,21 @@ def takeoff_dynamics(t, y):
 def landing_dynamics(t, y):
     z, vz, E = y
 
-    # --- Control law / thrust command ---
-    # Simple proportional controller on vertical speed:
-    k_p = 0.5                                        # if vz not euquak to v target increase acceleration by 5
+    #  Control law / thrust command 
+    # Proportional controller on vertical speed:
+    k_p = 0.5  # if vz not euquak to v target increase acceleration by 0.5
     
     Thurst = max(0.0, m_tot * (g + k_p * (v_l_target - vz)))  # Thurst (N)
    
     Drag_z = 0.5*rho*C_dz*A_top*(vz)* abs(vz)           # vertical drag (N)
     
-    # --- Power model ---
-    # Induced velocity (momentum theory)
+    #  Power model 
+    #  Induced velocity 
     vi = np.sqrt(Thurst / (2 * rho * A_disk))
     P_ind = Thurst * vi                     # induced power (W)
     P_elec = (P_ind / eta) + P_av           # electrical power 
 
-    # --- Dynamics ---
+    #  Dynamics 
     dzdt = vz
     dvzdt = (Thurst - (m_tot * g) - Drag_z )/ m_tot
     dEdt = -P_elec
@@ -164,9 +157,9 @@ def landing_dynamics(t, y):
     return [dzdt, dvzdt, dEdt]
 
 
-# ---------------------------------------
+
 # Forward-flight power
-# ---------------------------------------
+
 # This is a simple induced + profile drag + fixed term model.
 
 def power_model(W, v, params):
@@ -190,9 +183,9 @@ def power_model(W, v, params):
     return P_ind + P_drag + P_fixed   # Watts
 
 
-# ---------------------------------------
-# Takeoff / landing energy (uses ODEs)
-# ---------------------------------------
+#
+# Takeoff / landing energy 
+#
 # We compute a "baseline" takeoff & landing energy with the nominal mass,
 # then scale with total mass for other payloads (simple linear scaling assumption).
 
@@ -211,7 +204,7 @@ def compute_landing_energy_kwh():
     t_span = (0.0, 60.0)
 
     def event_ground_reached(t, y):
-        return y[0]  # z = 0 -> ground
+        return y[0]  # z = 0 to ground
 
     event_ground_reached.terminal = True
     event_ground_reached.direction = -1
@@ -228,7 +221,7 @@ def compute_landing_energy_kwh():
 
     E_end = sol.y[2][-1]
     E_used_J = E_avail - E_end
-    return E_used_J / 3.6e6  # J -> kWh
+    return E_used_J / 3.6e6  # J to kWh
 
 
 # Baseline vertical costs (for the nominal mass)
@@ -291,14 +284,10 @@ def takeoff_energy_kwh_for(payload_kg: float) -> float:
     return TAKEOFF_KWH_BASE * (total_mass / m_tot)
 
 
-# ---------------------------------------
 # Cruise energy
-# ---------------------------------------
 # This is “distance times power”, but with the power coming from power_model.
+# Braking distance solver using solve_ivp + event
 
-# ----------------------------
-# Robust braking distance solver using solve_ivp + event
-# ----------------------------
 def braking_distance_ivp(v0, theta_b):
     """
     Integrate 1D braking dynamics until v = 0.
@@ -327,9 +316,9 @@ x_cruise_start = x_target - d_brake
 print(f"Active braking distance ≈ {d_brake:.1f} m | Begin braking at x ≈ {x_cruise_start:.1f} m")
 
 
-# ----------------------------
+
 # Drone dynamics
-# ----------------------------
+
 def move_energy(t, y):
     z, vz, x, vx, E = y
 
@@ -337,7 +326,7 @@ def move_energy(t, y):
     Drag_x = 0.5 * rho * C_dx * A_front * vx**2
     Drag_z = 0.5 * rho * C_dz * A_top * vz**2
 
-    # Determine tilt (cruise → brake → level)
+    # Determine tilt (cruise to brake to level)
     if x < x_cruise_start:
         theta = theta_cruise
     elif x < x_target:
@@ -448,9 +437,9 @@ def move_energy_kwh(distance_km: float, payload_kg: float, cruise_speed_kmh: flo
     return E_base_kwh * mass_ratio
 
 
-# -----------------------
+
 # Debug: vertical energy table
-# -----------------------
+
 
 def print_vertical_energy_table():
     """

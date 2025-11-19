@@ -1,19 +1,17 @@
 # root_finding.py
 
-#IMPORTANR - it is notable this is not the only place i have used root finding i also
+#it is notable this is not the only place i have used root finding i also
 # used root finding in the ode part of the code when taking off
 
 import math
+
 from typing import Optional
 
 import numpy as np
 
 from ode import params
 
-
-# ----------------------------
 # Utility: incremental-search root finding + bisection
-# ----------------------------
 # We don’t use scipy’s root_scalar here on purpose.
 # Instead, we:
 #   1) Walk along the interval in fixed steps (incremental search).
@@ -73,9 +71,8 @@ def incremental_bisection_root(f, a, b, step=0.5, tol=1e-3, max_iter=50):
     return None
 
 
-# ----------------------------
+
 # Utility: simple linear regression
-# ----------------------------
 # We only need basic y ≈ m*x + b, so we implement OLS by hand.
 
 def linear_regression(x, y):
@@ -101,9 +98,8 @@ def linear_regression(x, y):
     return m, b
 
 
-# ----------------------------
+
 # Utility: custom exponential fit
-# ----------------------------
 # For payload vs range/endurance, we often see a “curve” rather than a straight line.
 # Here we fit y ≈ a * exp(b x) by taking logs and then reusing our linear_regression.
 
@@ -147,9 +143,9 @@ def exponential_fit(x, y):
     return f, a, b
 
 
-# -----------------------
+
 # Root-finding: crossover speed (power balance)
-# -----------------------
+
 # Here we find the speed where induced power = drag power for a given payload.
 # That’s a nice numerical example and gives some insight into the power model.
 
