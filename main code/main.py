@@ -38,6 +38,11 @@ from plotting import (
 #   - no-fly (blocked)
 #
 # The drone moves in 8 directions (including diagonals). Each step has a distance.
+# Distance represented by one grid cell
+
+# Distance represented by one grid cell
+KM_PER_GRID = 1.0   # change this to whatever you want (0.1, 0.25, 0.5 etc.)
+
 
 
 def in_bounds(r: int, c: int, rows: int, cols: int) -> bool:
