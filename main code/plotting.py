@@ -322,7 +322,7 @@ def plot_grid_and_paths(
         ax.plot(xs, ys, "-", color=color, linewidth=1.5, alpha=0.5, label=f"Trip {i+1}")
 
         # Scatter points coloured by battery %
-        sc = ax.scatter(xs, ys, c=soc_pct, cmap="viridis", s=40, edgecolor="k", vmin=0.0, vmax=100.0)
+        sc = ax.scatter(xs, ys, c=soc_pct, cmap= "RdBu", s=40, edgecolor="k", vmin=0.0, vmax=100.0)
 
         # Tiny arrows to show direction of travel
         for (x0, y0, x1, y1) in zip(xs[:-1], ys[:-1], xs[1:], ys[1:]):

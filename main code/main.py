@@ -2,7 +2,6 @@
 # these are all the import that any file uses in the code not just the main
 
 import random
-import math
 import heapq
 from typing import Tuple, List, Dict, Optional, Set
 
